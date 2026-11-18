@@ -537,6 +537,14 @@ def board_json(show_all=False, older=False):
     return json.dumps(data)
 
 
+def boards_json():
+    """The /boards.json body: the board switcher's list on its own route - every live board with its
+    counts and live runs, `current` marking the board this call reads (the active board, or the one
+    ?board= pinned). board.json embeds the same rows under "boards"; this route serves the list
+    alone, so a switcher can read it without a board."""
+    return json.dumps({"boards": CG.crew_card.boards_summary()})
+
+
 @contextlib.contextmanager
 def board_scope(query):
     """The ?board=<slug> override, for the life of one request: a slug that names no live board raises
@@ -681,6 +689,9 @@ class Handler(BaseHTTPRequestHandler):
             if js is None:
                 return self._send(404, "not found\n", "text/plain; charset=utf-8")
             return self._send(200, js, "text/javascript; charset=utf-8")
+        if path == "/boards.json":
+            # the board switcher's list without the board itself (board.json embeds the same rows)
+            return self._send(200, boards_json(), "application/json")
         if path in ("/board.json", "/index.json"):
             older = "older=1" in (urlparse(self.path).query or "")
             return self._send(200, board_json(show_all, older), "application/json")

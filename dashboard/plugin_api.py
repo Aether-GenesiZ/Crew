@@ -264,6 +264,11 @@ def _board_json(request: Request):
     return lambda crew: (200, crew.board_json(show_all, older), "application/json")
 
 
+def _boards_json():
+    # the board switcher's list without the board itself: the same rows board.json embeds as "boards"
+    return lambda crew: (200, crew.boards_json(), "application/json")
+
+
 def _card(card_id: str):
     return lambda crew: crew.card_response(card_id)
 
@@ -313,6 +318,12 @@ def get_app_js(request: Request):
 def get_board_json(request: Request):
     with _board(request):
         return _render(request, _board_json(request))
+
+
+@router.get("/boards.json")
+def get_boards_json(request: Request):
+    with _board(request):
+        return _render(request, _boards_json())
 
 
 @router.get("/card/{card_id}")
