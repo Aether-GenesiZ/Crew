@@ -926,15 +926,16 @@ def render_body(c):
 
 
 def _child_env():
-    """The environment for a child process that resolves its own board (the hermes CLI): the request's
-    board override, when one is set. A ContextVar cannot cross a process boundary; HERMES_KANBAN_BOARD
-    can - it is the first candidate Hermes's own resolver reads - so an action's subprocess lands on the
-    same board the request reads, not the active one. None (the child inherits) when no override is set."""
-    ov = board_db_override()
-    if not ov:
+    """The environment for a child process that resolves its own board (the hermes CLI): pinned to the
+    file the PARENT actually resolved - HERMES_KANBAN_DB, which Hermes ranks under its board= arg and
+    HERMES_KANBAN_BOARD. A ContextVar cannot cross a process boundary, and naming the board alone is not
+    enough: under a KANBAN_DB/HERMES_KANBAN_DB pin the parent serves the pin while the child would
+    follow the board, so parent and child can never disagree - pass the effective database. None (the
+    child inherits) when nothing resolves."""
+    db = kanban_db()
+    if not db:
         return None
-    slug = board_slug(ov)
-    return dict(os.environ, HERMES_KANBAN_BOARD=slug) if slug else None
+    return dict(os.environ, HERMES_KANBAN_DB=db)
 
 
 def _kanban(args, timeout=120):

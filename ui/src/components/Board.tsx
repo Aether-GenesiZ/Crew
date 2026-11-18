@@ -85,10 +85,7 @@ export function Board({ api, onOpenCard, flags, onFlags, home, boardSlug, onBoar
     api.post<AckResult>(withBoard(path, boardSlug)).then(refresh, refresh)
   }
 
-  // A payload naming another board than this view's pick is a stale frame (the switch just happened,
-  // the poll for the new board has not landed yet): it is not the board to act on - it loads.
-  const stale = !!board && !!boardSlug && board.board !== undefined && board.board !== boardSlug
-  if (!board || stale) {
+  if (!board) {
     const box: CSSProperties = { padding: 16, fontFamily: 'var(--crew-font)' }
     return <div style={box}>{error ? 'Crew could not load: ' + error : loading ? 'Loading...' : ''}</div>
   }

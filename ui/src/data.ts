@@ -14,13 +14,18 @@ export function useBoard(api: CrewApi, intervalMs = 2000, query = '') {
   // A changed query (another board, another flag set) means the payload in hand belongs to the old
   // view: drop it instead of showing the previous board with the new view's acks and actions.
   useEffect(() => { setBoard(null); setError(null); setLoading(true) }, [query])
+  // The query this hook currently wants; a response only lands when it answers exactly that. The
+  // server names the board it served in the payload, but a pinned environment serves the pin even for
+  // ?board= - so identity is the ASKED query, never the payload's own board name.
+  const wantedRef = useRef(query)
   useEffect(() => {
+    wantedRef.current = query
     let live = true
     const load = () =>
       api
         .get<Board>('/board.json' + (query ? '?' + query : ''))
-        .then(b => { if (live) { setBoard(b); setError(null) } })
-        .catch(e => { if (live) setError(String((e && e.message) || e)) })
+        .then(b => { if (live && wantedRef.current === query) { setBoard(b); setError(null) } })
+        .catch(e => { if (live && wantedRef.current === query) setError(String((e && e.message) || e)) })
         .finally(() => { if (live) setLoading(false) })
     load()
     const timer = setInterval(load, intervalMs)

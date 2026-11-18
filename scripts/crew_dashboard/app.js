@@ -12891,15 +12891,17 @@
       setError(null);
       setLoading(true);
     }, [query]);
+    const wantedRef = (0, import_react2.useRef)(query);
     (0, import_react2.useEffect)(() => {
+      wantedRef.current = query;
       let live = true;
       const load = () => api.get("/board.json" + (query ? "?" + query : "")).then((b) => {
-        if (live) {
+        if (live && wantedRef.current === query) {
           setBoard(b);
           setError(null);
         }
       }).catch((e) => {
-        if (live) setError(String(e && e.message || e));
+        if (live && wantedRef.current === query) setError(String(e && e.message || e));
       }).finally(() => {
         if (live) setLoading(false);
       });
@@ -13687,8 +13689,7 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
       setCleared((c) => /* @__PURE__ */ new Set([...c, ...ids]));
       api.post(withBoard(path, boardSlug)).then(refresh, refresh);
     };
-    const stale = !!board && !!boardSlug && board.board !== void 0 && board.board !== boardSlug;
-    if (!board || stale) {
+    if (!board) {
       const box = { padding: 16, fontFamily: "var(--crew-font)" };
       return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: box, children: error ? "Crew could not load: " + error : loading ? "Loading..." : "" });
     }

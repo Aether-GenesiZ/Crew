@@ -63,12 +63,22 @@ import crew_proc  # noqa: E402
 # The board this run of stop acts on: the same resolution the rest of the crew uses (crew_card.kanban_db:
 # a request's ?board= override, a pinned HERMES_KANBAN_DB / KANBAN_DB, else the board under this
 # HERMES_HOME). A hard-coded ~/.hermes/kanban.db ignored a routed profile and a non-default board, so
-# stop could park cards on the wrong one. Resolved PER CALL, never at import: a module-level read froze
-# the first request's board into every later call - with the switcher, a stop on one board must not act
-# on the board an earlier request pinned.
+# stop could park cards on the wrong one. The module-level KANBAN_DB keeps its upstream meaning - the
+# import-time fallback and the pin target tests and embedders patch (mock.patch.object(crew_stop,
+# "KANBAN_DB", ...)); a value that DIFFERS from the import-time one is such a pin and is authoritative
+# while it lasts. Everything else resolves PER CALL through board_db(), never frozen at import: a stop
+# on one board must not act on the board an earlier request pinned.
+KANBAN_DB = (crew_card.kanban_db() or os.environ.get("KANBAN_DB") or os.environ.get("HERMES_KANBAN_DB")
+             or os.path.join(crew_card.base_home(), "kanban.db"))
+_IMPORT_TIME_BOARD = KANBAN_DB
+
+
 def board_db():
+    """The board this call acts on: the module pin when one is active, else the live resolution."""
+    if KANBAN_DB != _IMPORT_TIME_BOARD:
+        return KANBAN_DB
     return (crew_card.kanban_db() or os.environ.get("KANBAN_DB") or os.environ.get("HERMES_KANBAN_DB")
-            or os.path.join(crew_card.base_home(), "kanban.db"))
+            or KANBAN_DB)
 # A card in one of these is still somebody's work in progress; done and archived are not.
 OPEN_STATUSES = ("triage", "todo", "scheduled", "ready", "running", "blocked", "review")
 CLOSED_STATUSES = ("done", "archived")

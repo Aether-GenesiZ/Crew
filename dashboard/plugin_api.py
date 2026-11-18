@@ -237,13 +237,13 @@ def _flag(request: Request, name: str) -> bool:
 
 
 @contextlib.contextmanager
-def _board(request: Request, body: dict | None = None):
+def _board(request: Request | None, body: dict | None = None):
     """The ?board=/body board pin for one request - the board switcher's per-request override, the same
     hook the standalone server applies: every builder below serves the named board (its data, its cards,
     its acks, the owner's actions) while the active board - the pointer `hermes kanban boards switch`
     moves - never changes. A slug naming no live board is a 404; the proof suite's env pins still win
     inside crew_card.kanban_db(), so a proof's board jail holds."""
-    slug = str((body or {}).get("board") or request.query_params.get("board") or "").strip()
+    slug = str((body or {}).get("board") or (request.query_params.get("board") if request else "") or "").strip()
     if not slug:
         yield
         return
@@ -407,7 +407,7 @@ def _run_action(name: str, card: str, mode: str) -> tuple[bool, str]:
 
 
 @router.post("/action/{name}")
-def post_action(name: str, request: Request, body: dict | None = Body(default=None)):
+def post_action(name: str, body: dict | None = Body(default=None)):
     body = body if isinstance(body, dict) else {}
     if name not in _ACTION_NAMES:
         return _action_error(400, "unknown action")
@@ -420,7 +420,9 @@ def post_action(name: str, request: Request, body: dict | None = Body(default=No
     if name == "stop" and body.get("confirm") is not True:
         return _action_error(400, "stop parks the card and kills its run: send confirm true")
     try:
-        with _board(request, body):
+        # the board rides the body on the command routes (the UI sends it there); the request is None
+        # in a direct call, and _board reads only the body then.
+        with _board(None, body):
             ok, text = _run_action(name, card, mode)
     except HTTPException:
         raise                     # an unknown board stays a 404, not a swallowed {ok: false} action answer

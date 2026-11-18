@@ -27,10 +27,10 @@ export function CrewPage({ api }: { api: CrewApi }) {
     const go = () => {
       const id = cardFromHash(window.location.hash)
       const slug = boardFromQuery(window.location.hash)
-      // A link WITH a board uses it; a link WITHOUT one means the ACTIVE board, not whatever this page
-      // was last viewing - a bare card id must not inherit a stale board pick.
-      setBoardSlug(slug)
-      if (id) setRoute({ page: 'card', id })
+      // A card link names its board (or means the ACTIVE board when it names none) - never whatever
+      // this page was last viewing. A bare hash is a normal entry: keep the persisted pick.
+      if (id) { setBoardSlug(slug); setRoute({ page: 'card', id }) }
+      else if (slug) setBoardSlug(slug)
     }
     go()
     window.addEventListener('hashchange', go)

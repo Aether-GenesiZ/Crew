@@ -200,15 +200,17 @@ function useBoard(api, intervalMs = 2e3, query = "") {
     setError(null);
     setLoading(true);
   }, [query]);
+  const wantedRef = useRef(query);
   useEffect2(() => {
+    wantedRef.current = query;
     let live = true;
     const load = () => api.get("/board.json" + (query ? "?" + query : "")).then((b) => {
-      if (live) {
+      if (live && wantedRef.current === query) {
         setBoard(b);
         setError(null);
       }
     }).catch((e) => {
-      if (live) setError(String(e && e.message || e));
+      if (live && wantedRef.current === query) setError(String(e && e.message || e));
     }).finally(() => {
       if (live) setLoading(false);
     });
@@ -996,8 +998,7 @@ function Board({ api, onOpenCard, flags, onFlags, home, boardSlug, onBoard }) {
     setCleared((c) => /* @__PURE__ */ new Set([...c, ...ids]));
     api.post(withBoard(path, boardSlug)).then(refresh, refresh);
   };
-  const stale = !!board && !!boardSlug && board.board !== void 0 && board.board !== boardSlug;
-  if (!board || stale) {
+  if (!board) {
     const box = { padding: 16, fontFamily: "var(--crew-font)" };
     return /* @__PURE__ */ jsx4("div", { style: box, children: error ? "Crew could not load: " + error : loading ? "Loading..." : "" });
   }
@@ -3305,8 +3306,10 @@ function CrewPage({ api }) {
     const go = () => {
       const id = cardFromHash(window.location.hash);
       const slug = boardFromQuery(window.location.hash);
-      setBoardSlug(slug);
-      if (id) setRoute({ page: "card", id });
+      if (id) {
+        setBoardSlug(slug);
+        setRoute({ page: "card", id });
+      } else if (slug) setBoardSlug(slug);
     };
     go();
     window.addEventListener("hashchange", go);
