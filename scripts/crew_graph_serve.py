@@ -22,6 +22,7 @@ CREW_GRAPH_HOSTS (comma list, e.g. the tailnet name; a bare name or name:port) -
 which closes the DNS-rebinding route to the board. Every HTML response carries a strict CSP: this origin
 only, no inline script.
 """
+import contextlib
 import importlib.util
 import json
 import os
@@ -529,7 +530,31 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 
 def board_json(show_all=False, older=False):
     """The /board.json body: one owner for the standalone server and the dashboard plugin."""
-    return json.dumps(board_data(show_all, older=older))
+    data = board_data(show_all, older=older)
+    # The board switcher rides the one poll the page already makes: every live board with its counts,
+    # `current` marking the board this body shows (the active board, or the one ?board= pinned).
+    data["boards"] = CG.crew_card.boards_summary()
+    return json.dumps(data)
+
+
+@contextlib.contextmanager
+def board_scope(query):
+    """The ?board=<slug> override, for the life of one request: a slug that names no live board raises
+    ValueError; one that does pins crew_card's ONE resolver to that board, so everything this request
+    builds - the board's data, a card's graph, its acks, the owner's actions - serves that board while
+    the active board never moves. No param: the active board, unchanged."""
+    slug = (parse_qs(query or "").get("board") or [""])[0].strip()
+    if not slug:
+        yield
+        return
+    db = CG.crew_card.kanban_db_for(slug)
+    if not db:
+        raise ValueError("unknown board: %s" % slug)
+    CG.crew_card.set_board_db(db)
+    try:
+        yield
+    finally:
+        CG.crew_card.clear_board_db()
 
 
 def face_svg(role):
@@ -609,12 +634,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(403, "cross-site write refused\n", "text/plain; charset=utf-8")
         rest = path[len("/ack/"):].strip("/")
         undo = "undo=1" in (parts.query or "")
-        code, text = ack_all(undo=undo) if rest == "all" else ack_card(rest, undo=undo)
+        try:
+            with board_scope(parts.query):
+                code, text = ack_all(undo=undo) if rest == "all" else ack_card(rest, undo=undo)
+        except ValueError as exc:
+            return self._send(404, str(exc) + "\n", "text/plain; charset=utf-8")
         return self._send(code, text, "text/plain; charset=utf-8")
 
     def do_GET(self):
         if not self._host_ok():
             return
+        try:
+            with board_scope(urlparse(self.path).query):
+                return self._do_get()
+        except ValueError as exc:
+            return self._send(404, str(exc) + "\n", "text/plain; charset=utf-8")
+
+    def _do_get(self):
         path = unquote(urlparse(self.path).path)
         if path in ("/healthz", "/health"):
             try:

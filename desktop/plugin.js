@@ -94,13 +94,63 @@ function crewVarsFromTheme(theme, mode = "light") {
   };
 }
 
+// src/components/boardUtil.ts
+function fmt(s) {
+  if (s === null || s === void 0) return "";
+  s = Math.max(0, Math.floor(s));
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m";
+  if (s < 86400) return Math.floor(s / 3600) + "h";
+  return Math.floor(s / 86400) + "d";
+}
+var shortId = (id) => String(id).replace(/^t_/, "").slice(0, 6);
+function hhmm(d) {
+  const p = (x) => (x < 10 ? "0" : "") + x;
+  return p(d.getHours()) + ":" + p(d.getMinutes());
+}
+function store(k, v) {
+  try {
+    if (v === void 0) return sessionStorage.getItem("crew." + k);
+    if (v === null) sessionStorage.removeItem("crew." + k);
+    else sessionStorage.setItem("crew." + k, v);
+  } catch {
+    return null;
+  }
+}
+function boardParam(board) {
+  const slug = (board || "").trim();
+  return slug && /^[a-z0-9][a-z0-9_-]*$/.test(slug) ? "board=" + encodeURIComponent(slug) : "";
+}
+function withBoard(path, board) {
+  const q = boardParam(board);
+  return q ? path + (path.includes("?") ? "&" : "?") + q : path;
+}
+var TONE = {
+  blocked: "var(--crew-tone-blocked)",
+  triage: "var(--crew-tone-blocked)",
+  running: "var(--crew-tone-running)",
+  review: "var(--crew-tone-review)",
+  ready: "var(--crew-tone-ready)",
+  todo: "var(--crew-tone-neutral)",
+  done: "var(--crew-tone-done)",
+  queued: "var(--crew-tone-ready)",
+  other: "var(--crew-tone-neutral)"
+};
+var QUIET_S = 120;
+
 // src/open-card.ts
 var CREW_ROUTE = "/crew";
-var cardLink = (id, stamp = Date.now()) => CREW_ROUTE + "?card=" + encodeURIComponent(id) + "&n=" + stamp;
+var cardLink = (id, stamp = Date.now(), board) => CREW_ROUTE + withBoard("?card=" + encodeURIComponent(id) + "&n=" + stamp, board);
 function cardFromHash(hash) {
   const m = /^#?\/crew\?(.*)$/.exec(hash || "");
   const id = m ? new URLSearchParams(m[1]).get("card") || "" : "";
   return /^[A-Za-z0-9_-]+$/.test(id) ? id : "";
+}
+var BOARD_SLUG = /^[a-z0-9][a-z0-9_-]*$/;
+function boardFromQuery(search) {
+  const m = /^#?\/crew\?(.*)$/.exec(search || "");
+  const id = m ? new URLSearchParams(m[1]).get("board") || "" : "";
+  return BOARD_SLUG.test(id) ? id : "";
 }
 
 // src/card-open.ts
@@ -166,7 +216,7 @@ function useBoard(api, intervalMs = 2e3, query = "") {
   }, [api, intervalMs, query, tick]);
   return { board, error, loading, refresh: () => setTick((n) => n + 1) };
 }
-function useCard(api, id, intervalMs = 2e3, paused = false) {
+function useCard(api, id, intervalMs = 2e3, paused = false, board) {
   const [card, setCard] = useState2(null);
   const [error, setError] = useState2(null);
   const [loading, setLoading] = useState2(true);
@@ -176,7 +226,7 @@ function useCard(api, id, intervalMs = 2e3, paused = false) {
     let live = true;
     setCard(null);
     setLoading(true);
-    const load = () => api.get("/card/" + encodeURIComponent(id) + ".json").then((c) => {
+    const load = () => api.get(withBoard("/card/" + encodeURIComponent(id) + ".json", board)).then((c) => {
       if (live) {
         setCard(c);
         setError(null);
@@ -303,6 +353,12 @@ var board_default = `/* Board styles, ported unchanged from scripts/crew_dashboa
 .page-board button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .page-board header{display:flex;align-items:center;gap:14px;padding:14px 18px 10px;flex:0 0 auto}
 .page-board h1{font-size:15px;margin:0;font-weight:600;letter-spacing:-.01em}
+/* The board switcher: a plain select in the header line (both shells), drawn only when the server
+   offers more than one live board. Max-width keeps a long board name from pushing the header away. */
+.page-board select.boardpick{flex:0 1 auto;min-width:120px;max-width:280px;font:inherit;font-size:12px;
+  padding:3px 6px;border:1px solid var(--crew-stroke-2);border-radius:6px;background:var(--crew-bg);
+  color:var(--crew-fg);cursor:pointer}
+.page-board select.boardpick:focus-visible{outline:2px solid var(--crew-tone-ready);outline-offset:1px}
 /* LIVE: the server answers the poll - a green dot that pulses; amber and still once a poll fails */
 .page-board .badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 9px 2px 7px;font-weight:700;
   font-size:10px;letter-spacing:.08em;line-height:1.3;color:var(--crew-tone-running);
@@ -458,42 +514,6 @@ var board_default = `/* Board styles, ported unchanged from scripts/crew_dashboa
 .page-board .card .tmsg{font-size:10px;line-height:1.4;color:var(--crew-text-2);overflow-wrap:anywhere}
 .page-board .card .tmsg.bad{color:var(--crew-tone-blocked)}
 `;
-
-// src/components/boardUtil.ts
-function fmt(s) {
-  if (s === null || s === void 0) return "";
-  s = Math.max(0, Math.floor(s));
-  if (s < 60) return s + "s";
-  if (s < 3600) return Math.floor(s / 60) + "m";
-  if (s < 86400) return Math.floor(s / 3600) + "h";
-  return Math.floor(s / 86400) + "d";
-}
-var shortId = (id) => String(id).replace(/^t_/, "").slice(0, 6);
-function hhmm(d) {
-  const p = (x) => (x < 10 ? "0" : "") + x;
-  return p(d.getHours()) + ":" + p(d.getMinutes());
-}
-function store(k, v) {
-  try {
-    if (v === void 0) return sessionStorage.getItem("crew." + k);
-    if (v === null) sessionStorage.removeItem("crew." + k);
-    else sessionStorage.setItem("crew." + k, v);
-  } catch {
-    return null;
-  }
-}
-var TONE = {
-  blocked: "var(--crew-tone-blocked)",
-  triage: "var(--crew-tone-blocked)",
-  running: "var(--crew-tone-running)",
-  review: "var(--crew-tone-review)",
-  ready: "var(--crew-tone-ready)",
-  todo: "var(--crew-tone-neutral)",
-  done: "var(--crew-tone-done)",
-  queued: "var(--crew-tone-ready)",
-  other: "var(--crew-tone-neutral)"
-};
-var QUIET_S = 120;
 
 // src/components/Lane.tsx
 import { useLayoutEffect, useRef as useRef3 } from "react";
@@ -684,7 +704,7 @@ var WHAT = {
 var LABEL = { unstuck: "Unstuck", retry: "Retry", proof: "Proof", stop: "Stop" };
 var SHOW_MS = 6e3;
 var NAMES = ["unstuck", "retry", "proof", "stop"];
-function ActionButtons({ subject, card, compact, only, onResult, onDone }) {
+function ActionButtons({ subject, card, compact, only, board, onResult, onDone }) {
   const { actions } = useCrewHost();
   const [busy, setBusy] = useState3(null);
   if (!actions) return null;
@@ -704,7 +724,7 @@ function ActionButtons({ subject, card, compact, only, onResult, onDone }) {
     }
     setBusy(name);
     try {
-      onResult(await actions.run(name, card, extra));
+      onResult(await actions.run(name, card, extra, board));
     } catch (e) {
       onResult({ ok: false, text: LABEL[name] + " failed: " + (e instanceof Error ? e.message : String(e)) });
     }
@@ -742,7 +762,7 @@ function useFlash(reset) {
     timer.current = setTimeout(() => setMsg(null), SHOW_MS);
   }];
 }
-function ActionBar({ card, openChat, onDone }) {
+function ActionBar({ card, openChat, board, onDone }) {
   const { actions } = useCrewHost();
   const [msg, show] = useFlash(card.card_id);
   if (!actions) return null;
@@ -750,7 +770,7 @@ function ActionBar({ card, openChat, onDone }) {
   const target = coordinatorTarget(card.coordinator);
   return /* @__PURE__ */ jsxs("div", { id: "actionbar", className: "actionbar", children: [
     /* @__PURE__ */ jsxs("div", { className: "abtns", children: [
-      /* @__PURE__ */ jsx(ActionButtons, { subject: cardSubject(card), card: card.card_id, onResult: show, onDone }),
+      /* @__PURE__ */ jsx(ActionButtons, { subject: cardSubject(card), card: card.card_id, board, onResult: show, onDone }),
       target && openChat ? /* @__PURE__ */ jsx(
         Button2,
         {
@@ -766,7 +786,7 @@ function ActionBar({ card, openChat, onDone }) {
     msg ? /* @__PURE__ */ jsx("div", { id: "actionmsg", role: "status", className: "amsg" + (msg.ok ? "" : " bad"), children: msg.text }) : null
   ] });
 }
-function TileActions({ t, lane }) {
+function TileActions({ t, lane, board }) {
   const { actions } = useCrewHost();
   const [msg, show] = useFlash(t.id);
   if (!actions || lane !== "blocked") return null;
@@ -775,7 +795,7 @@ function TileActions({ t, lane }) {
     e.preventDefault();
     e.stopPropagation();
   }, children: [
-    /* @__PURE__ */ jsx("div", { className: "tbtns", children: /* @__PURE__ */ jsx(ActionButtons, { compact: true, only: ["unstuck", "retry", "proof"], subject, card: t.id, onResult: show, onDone: () => {
+    /* @__PURE__ */ jsx("div", { className: "tbtns", children: /* @__PURE__ */ jsx(ActionButtons, { compact: true, only: ["unstuck", "retry", "proof"], subject, card: t.id, board, onResult: show, onDone: () => {
     } }) }),
     msg ? /* @__PURE__ */ jsx("div", { role: "status", className: "tmsg" + (msg.ok ? "" : " bad"), children: msg.text }) : null
   ] });
@@ -810,7 +830,7 @@ function Avatar({ api, name, hue }) {
   if (name) return /* @__PURE__ */ jsx2("img", { className: "avatar face", src, alt: name, title: name });
   return /* @__PURE__ */ jsx2("span", { className: "avatar", style: { "--hue": hue || "var(--crew-text-3)" }, children: "?" });
 }
-function CardTile({ t, lane, api, onOpen }) {
+function CardTile({ t, lane, api, board, onOpen }) {
   const who = t.active ? t.active.profile : t.role || t.assignee || "unassigned";
   const b = t.budget;
   const quiet = !!t.active && t.active.quiet_s !== null && t.active.quiet_s !== void 0 && t.active.quiet_s > QUIET_S;
@@ -840,7 +860,7 @@ function CardTile({ t, lane, api, onOpen }) {
         /* @__PURE__ */ jsx2("span", { className: "id", title: t.id, children: shortId(t.id) })
       ] })
     ] }),
-    /* @__PURE__ */ jsx2(TileActions, { t, lane })
+    /* @__PURE__ */ jsx2(TileActions, { t, lane, board })
   ] });
 }
 
@@ -854,7 +874,7 @@ function LaneBody({ laneKey, children }) {
   }, [laneKey]);
   return /* @__PURE__ */ jsx3("div", { className: "lbody", ref, onScroll: (e) => store("scroll." + laneKey, String(e.currentTarget.scrollTop)), children });
 }
-function Lane({ lane: l, api, archivedOpen, older, onToggleArchived, onOlder, onOpenCard }) {
+function Lane({ lane: l, api, archivedOpen, older, board, onToggleArchived, onOlder, onOpenCard }) {
   const tone4 = { "--tone": TONE[l.key] || "var(--crew-tone-neutral)" };
   const n = l.tiles.length + (l.hidden || 0);
   const key = (fn) => (e) => {
@@ -903,7 +923,7 @@ function Lane({ lane: l, api, archivedOpen, older, onToggleArchived, onOlder, on
       }
     ),
     /* @__PURE__ */ jsxs3(LaneBody, { laneKey: l.key, children: [
-      l.tiles.map((t) => /* @__PURE__ */ jsx3(CardTile, { t, lane: l.key, api, onOpen: onOpenCard }, t.id)),
+      l.tiles.map((t) => /* @__PURE__ */ jsx3(CardTile, { t, lane: l.key, api, board, onOpen: onOpenCard }, t.id)),
       l.hidden && l.key === "done" ? /* @__PURE__ */ jsxs3("button", { className: "more", "data-older": "1", onClick: () => onOlder(true), children: [
         "Show ",
         +l.hidden || 0,
@@ -917,7 +937,7 @@ function Lane({ lane: l, api, archivedOpen, older, onToggleArchived, onOlder, on
 import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 var HEADER = [["running", "running", ["running"]], ["blocked", "blocked", ["blocked", "triage"]], ["done", "done", ["done"]]];
 var BELL = /* @__PURE__ */ jsx4("svg", { width: "15", height: "15", viewBox: "0 0 24 24", "aria-hidden": "true", fill: "currentColor", children: /* @__PURE__ */ jsx4("path", { d: "M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" }) });
-function Board({ api, onOpenCard, flags, onFlags, home }) {
+function Board({ api, onOpenCard, flags, onFlags, home, boardSlug, onBoard }) {
   injectCss("base", base_default);
   injectCss("board", board_default);
   const { kanbanRow } = useCrewHost();
@@ -930,7 +950,7 @@ function Board({ api, onOpenCard, flags, onFlags, home }) {
     if (typeof location !== "undefined" && location.hash === "#archived") store("archived.open", "1");
     return !!store("archived.open");
   });
-  const query = [all ? "all=1" : "", older ? "older=1" : ""].filter(Boolean).join("&");
+  const query = [all ? "all=1" : "", older ? "older=1" : "", boardParam(boardSlug)].filter(Boolean).join("&");
   const { board, error, loading, refresh } = useBoard(api, 2e3, query);
   const setOlderFlag = (on) => {
     store("older", on ? "1" : null);
@@ -969,7 +989,7 @@ function Board({ api, onOpenCard, flags, onFlags, home }) {
   }, []);
   const ack = (path, ids) => {
     setCleared((c) => /* @__PURE__ */ new Set([...c, ...ids]));
-    api.post(path).then(refresh, refresh);
+    api.post(withBoard(path, boardSlug)).then(refresh, refresh);
   };
   if (!board) {
     const box = { padding: 16, fontFamily: "var(--crew-font)" };
@@ -993,6 +1013,20 @@ function Board({ api, onOpenCard, flags, onFlags, home }) {
         "LIVE"
       ] }),
       /* @__PURE__ */ jsx4("h1", { children: "crew board" }),
+      onBoard && (board.boards?.length || 0) > 1 ? /* @__PURE__ */ jsx4(
+        "select",
+        {
+          id: "boardpick",
+          className: "boardpick",
+          title: "the board this view shows - the active board never changes",
+          value: boardSlug || (board.boards || []).find((b) => b.current)?.slug || "",
+          onChange: (e) => onBoard(e.target.value),
+          children: (board.boards || []).map((b) => {
+            const n = (b.counts?.blocked || 0) + (b.counts?.triage || 0);
+            return /* @__PURE__ */ jsx4("option", { value: b.slug, children: b.name + (b.live ? ` - ${b.live} working` : "") + (n ? ` - ${n} blocked` : "") }, b.slug);
+          })
+        }
+      ) : null,
       /* @__PURE__ */ jsx4("span", { className: "meta", id: "cards", children: cards + " card" + (cards === 1 ? "" : "s") }),
       /* @__PURE__ */ jsx4("span", { className: "meta" + (live ? " on" : ""), id: "live", children: live ? live + " working now" : "nothing running" }),
       /* @__PURE__ */ jsx4("div", { className: "stats", id: "counts", children: HEADER.map(([cls, word, statuses]) => {
@@ -1038,7 +1072,7 @@ function Board({ api, onOpenCard, flags, onFlags, home }) {
             ] }),
             /* @__PURE__ */ jsx4("div", { id: "noterows", children: rows.length ? rows.map((r) => /* @__PURE__ */ jsxs4("div", { className: "ar" + (r.status !== "done" ? " stuck" : ""), children: [
               /* @__PURE__ */ jsx4("span", { className: "st", children: r.status }),
-              /* @__PURE__ */ jsx4("a", { className: "t", href: "/card/" + r.id, onClick: (e) => {
+              /* @__PURE__ */ jsx4("a", { className: "t", href: withBoard("/card/" + r.id, boardSlug), onClick: (e) => {
                 e.preventDefault();
                 setNotesOpen(false);
                 onOpenCard(r.id);
@@ -1065,6 +1099,7 @@ function Board({ api, onOpenCard, flags, onFlags, home }) {
       {
         lane: l,
         api,
+        board: boardSlug,
         archivedOpen,
         older,
         onToggleArchived: toggleArchived,
@@ -2861,7 +2896,7 @@ function Field({ label, value, copy }) {
     copy ? /* @__PURE__ */ jsx16(CopyButton, { id: copy.id, title: copy.title, text: () => value }) : null
   ] });
 }
-function TopArea({ card, openChat, onAction }) {
+function TopArea({ card, openChat, board, onGraph, onAction }) {
   const { actions } = useCrewHost();
   const s = card.situation || {};
   const cls = s.headline && s.headline.indexOf("stopped") === 0 ? "blocked" : s.headline === "finished" ? "done" : s.headline && s.headline.indexOf("working") === 0 ? "running" : "";
@@ -2893,7 +2928,26 @@ function TopArea({ card, openChat, onAction }) {
         /* @__PURE__ */ jsx16(Field, { label: "model", value: card.card_model || "" }),
         card.card_created_at ? /* @__PURE__ */ jsx16(Field, { label: "started", value: fmtAge(Date.now() / 1e3 - card.card_created_at) }) : null,
         /* @__PURE__ */ jsx16(Field, { label: "kanban id", value: card.card_id || "", copy: { id: "cardIdCopy", title: "copy the kanban id" } }),
+        /* @__PURE__ */ jsx16(Field, { label: "board", value: board || card.board || "" }),
         /* @__PURE__ */ jsx16(Field, { label: "coordinator", value: card.coordinator || "", copy: { id: "cardCoCopy", title: "copy the coordinator session" } }),
+        onGraph ? /* @__PURE__ */ jsxs15("span", { className: "fp", children: [
+          /* @__PURE__ */ jsx16("span", { className: "fk", children: "graph" }),
+          /* @__PURE__ */ jsx16(
+            "button",
+            {
+              type: "button",
+              className: "copy",
+              id: "cardGraph",
+              title: "open this card in the kanban graph",
+              "aria-label": "open this card in the kanban graph",
+              onClick: (e) => {
+                e.stopPropagation();
+                onGraph(board || card.board || "default", card.card_id || "");
+              },
+              children: "kanban graph \u2197"
+            }
+          )
+        ] }) : null,
         target && openChat && !actions ? /* @__PURE__ */ jsxs15(Fragment8, { children: [
           /* @__PURE__ */ jsx16("span", { className: "brk" }),
           /* @__PURE__ */ jsx16("span", { className: "fp openrow", children: /* @__PURE__ */ jsx16(
@@ -2913,7 +2967,7 @@ function TopArea({ card, openChat, onAction }) {
           ) })
         ] }) : null
       ] }),
-      /* @__PURE__ */ jsx16(ActionBar, { card, openChat, onDone: onAction || (() => {
+      /* @__PURE__ */ jsx16(ActionBar, { card, openChat, board, onDone: onAction || (() => {
       }) })
     ] }),
     /* @__PURE__ */ jsxs15("div", { className: "tcell", id: "topWhy", children: [
@@ -2953,11 +3007,11 @@ function readRail() {
     return false;
   }
 }
-function CardPage({ api, id, onBack, openChat, hash = false, boardHref = "/" }) {
+function CardPage({ api, id, onBack, openChat, board, onGraph, hash = false, boardHref = "/" }) {
   injectCss("base", base_default);
   injectCss("card", card_default);
   const [paused, setPaused] = useState9(false);
-  const { card, error, loading, reload } = useCard(api, id, 2e3, paused);
+  const { card, error, loading, reload } = useCard(api, id, 2e3, paused, board);
   const [selected, setSelected] = useState9(null);
   const [selStep, setSelStep] = useState9(-1);
   const [panelOpen, setPanelOpen] = useState9(false);
@@ -3070,7 +3124,7 @@ function CardPage({ api, id, onBack, openChat, hash = false, boardHref = "/" }) 
     }, children: /* @__PURE__ */ jsx17("img", { src: MARK_URI, alt: "", width: 26, height: 26 }) }),
     /* @__PURE__ */ jsx17(EventLine, { card }),
     /* @__PURE__ */ jsxs16("div", { id: "main", children: [
-      /* @__PURE__ */ jsx17(TopArea, { card, openChat, onAction: reload }),
+      /* @__PURE__ */ jsx17(TopArea, { card, openChat, board, onGraph, onAction: reload }),
       /* @__PURE__ */ jsx17(Roster, {}),
       /* @__PURE__ */ jsxs16("div", { id: "row", children: [
         /* @__PURE__ */ jsx17(Rail, { card, collapsed: railCollapsed, onToggle: toggleRail, onBack, href: boardHref }),
@@ -3239,18 +3293,26 @@ import { jsx as jsx19, jsxs as jsxs18 } from "react/jsx-runtime";
 var splashShown = false;
 function CrewPage({ api }) {
   const { theme, renderedMode } = useTheme();
-  const [route, setRoute] = useState11({ page: "board", all: false });
+  const [route, setRoute] = useState11(() => ({ page: "board", all: false }));
+  const [boardSlug, setBoardSlug] = useState11(() => boardFromQuery(window.location.hash) || store("page.board") || "");
   useEffect10(() => {
     const go = () => {
       const id = cardFromHash(window.location.hash);
+      const slug = boardFromQuery(window.location.hash);
+      if (slug) setBoardSlug(slug);
       if (id) setRoute({ page: "card", id });
     };
     go();
     window.addEventListener("hashchange", go);
     return () => window.removeEventListener("hashchange", go);
   }, []);
+  const pickBoard = (slug) => {
+    setBoardSlug(slug);
+    store("page.board", slug || null);
+  };
   const back = () => setRoute({ page: "board", all: false });
   const host3 = sdk.host;
+  const navigator2 = typeof host3?.navigate === "function" ? (board, id) => host3.navigate("/kanban-graph?task=" + encodeURIComponent(board + "/" + id)) : void 0;
   const openSession = host3?.openSession;
   const openChat = typeof openSession === "function" ? (profile, session) => {
     void openSession.call(host3, session, { profile });
@@ -3271,7 +3333,7 @@ function CrewPage({ api }) {
       style: { ...crewVarsFromTheme(theme, renderedMode), background: "var(--crew-bg)", color: "var(--crew-fg)", height: "100%", minHeight: "100%", width: "100%", minWidth: 0, flex: "1 1 auto", alignSelf: "stretch", boxSizing: "border-box", position: "relative", overflow: card ? "hidden" : "auto" },
       children: [
         splash ? /* @__PURE__ */ jsx19(Splash, { api }) : null,
-        route.page === "card" ? /* @__PURE__ */ jsx19(CardPage, { api, id: route.id, onBack: back, openChat }) : /* @__PURE__ */ jsx19(Board, { api, onOpenCard: (id) => setRoute({ page: "card", id }), home: back })
+        route.page === "card" ? /* @__PURE__ */ jsx19(CardPage, { api, id: route.id, onBack: back, openChat, board: boardSlug, onGraph: navigator2 }) : /* @__PURE__ */ jsx19(Board, { api, onOpenCard: (id) => setRoute({ page: "card", id }), boardSlug, onBoard: pickBoard, home: back })
       ]
     }
   );
@@ -3280,7 +3342,7 @@ function CrewPage({ api }) {
 // src/components/FlowPane.tsx
 import { useEffect as useEffect11, useId as useId2, useState as useState12, useSyncExternalStore } from "react";
 import { Fragment as Fragment9, jsx as jsx20, jsxs as jsxs19 } from "react/jsx-runtime";
-function useLiveCard(api, id, intervalMs = 2e3) {
+function useLiveCard(api, id, intervalMs = 2e3, board) {
   const [card, setCard] = useState12(null);
   const [error, setError] = useState12(null);
   useEffect11(() => {
@@ -3288,7 +3350,7 @@ function useLiveCard(api, id, intervalMs = 2e3) {
     setError(null);
     if (!id) return;
     let live = true;
-    const load = () => api.get("/card/" + id + ".json").then((c) => {
+    const load = () => api.get(withBoard("/card/" + id + ".json", board)).then((c) => {
       if (live) {
         setCard(c);
         setError(null);
@@ -3302,7 +3364,7 @@ function useLiveCard(api, id, intervalMs = 2e3) {
       live = false;
       clearInterval(timer);
     };
-  }, [api, id, intervalMs]);
+  }, [api, id, intervalMs, board]);
   return { card, error };
 }
 var KIND_LABEL = { brief: "Owner brief", close: "Close", verifier: "Verifier" };
@@ -3371,7 +3433,12 @@ function Chart({ card, go }) {
 function FlowPane({ api, navigate, cardLink: cardLink2, boardLink }) {
   injectCss("base", base_default);
   injectCss("graph", graph_default);
-  const { board, error: boardError } = useBoard(api);
+  const [boardSlug, setBoardSlug] = useState12(() => store("flow.board") || "");
+  const pickBoard = (slug) => {
+    setBoardSlug(slug);
+    store("flow.board", slug || null);
+  };
+  const { board, error: boardError } = useBoard(api, 2e3, boardParam(boardSlug));
   const cards = [];
   const seen = /* @__PURE__ */ new Set();
   for (const want of [false, true])
@@ -3390,7 +3457,7 @@ function FlowPane({ api, navigate, cardLink: cardLink2, boardLink }) {
   }, [pick, picked]);
   const cur = picked ?? cards[0] ?? null;
   const onCardPage = useSyncExternalStore(subscribeCardPage, cardPageOpen, cardPageOpen);
-  const { card, error } = useLiveCard(api, cur && !onCardPage ? cur.id : null);
+  const { card, error } = useLiveCard(api, cur && !onCardPage ? cur.id : null, 2e3, boardSlug);
   if (onCardPage)
     return /* @__PURE__ */ jsx20("div", { className: "crew-scope crew-flow", children: /* @__PURE__ */ jsxs19("div", { className: "fhint fcompact", children: [
       "Full flow is open on the left - ",
@@ -3402,12 +3469,23 @@ function FlowPane({ api, navigate, cardLink: cardLink2, boardLink }) {
       /* @__PURE__ */ jsx20("kbd", { children: "Ctrl+J" }),
       " hides this pane"
     ] }),
+    (board?.boards?.length || 0) > 1 ? /* @__PURE__ */ jsx20("div", { className: "fhead", children: /* @__PURE__ */ jsx20(
+      "select",
+      {
+        className: "fsel",
+        "aria-label": "Board",
+        title: "the board this pane watches - the active board never changes",
+        value: boardSlug || board?.boards?.find((b) => b.current)?.slug || "",
+        onChange: (e) => pickBoard(e.target.value),
+        children: (board?.boards || []).map((b) => /* @__PURE__ */ jsx20("option", { value: b.slug, children: b.name + (b.live ? " - " + b.live + " working" : "") }, b.slug))
+      }
+    ) }) : null,
     cur ? /* @__PURE__ */ jsxs19(Fragment9, { children: [
       /* @__PURE__ */ jsx20("div", { className: "fhead", children: cards.length > 1 ? /* @__PURE__ */ jsx20("select", { className: "fsel", "aria-label": "Card", value: cur.id, onChange: (e) => setPick(e.target.value), children: cards.map((t) => /* @__PURE__ */ jsx20("option", { value: t.id, children: shortId(t.id) + "  " + t.title }, t.id)) }) : /* @__PURE__ */ jsxs19(Fragment9, { children: [
         /* @__PURE__ */ jsx20("span", { className: "fid", children: shortId(cur.id) }),
         /* @__PURE__ */ jsx20("span", { className: "ftitle", children: cur.title })
       ] }) }),
-      card && card.card_id === cur.id ? /* @__PURE__ */ jsx20(Chart, { card, go: () => navigate?.(cardLink2(cur.id)) }) : /* @__PURE__ */ jsx20("div", { className: "fnone", children: error ? "Crew could not load the flow: " + error : "Loading the flow..." })
+      card && card.card_id === cur.id ? /* @__PURE__ */ jsx20(Chart, { card, go: () => navigate?.(cardLink2(cur.id, Date.now(), boardSlug)) }) : /* @__PURE__ */ jsx20("div", { className: "fnone", children: error ? "Crew could not load the flow: " + error : "Loading the flow..." })
     ] }) : /* @__PURE__ */ jsxs19("div", { className: "fnone", children: [
       boardError && !board ? "Crew could not load: " + boardError : "Nothing running",
       " ",
@@ -3435,8 +3513,9 @@ function Host({ api, kanban, children }) {
     else if (Sd) h.renderMarkdown = (text) => /* @__PURE__ */ jsx21(Sd, { children: text });
     if (sdk2.Button && sdk2.ConfirmDialog)
       h.actions = {
-        // the route is POST /action/<name> {card, ...extra}; the backend allowlists the names again
-        run: (name, card, extra) => api.post("/action/" + name, { ...extra, card }),
+        // the route is POST /action/<name> {card, ...extra}; the backend allowlists the names again.
+        // `board` (the switcher's pick; '' = the active board) lands the command on the board the view shows.
+        run: (name, card, extra, board) => api.post("/action/" + name, { ...extra, card, ...board ? { board } : {} }),
         confirm: (title, body) => new Promise((resolve) => setAsk({ title, body, done: resolve })),
         Button: sdk2.Button
       };

@@ -20,6 +20,7 @@ command the verifier can run and a token budget.
       prints only the contract fields of a card (what the verifier may read).
 """
 import argparse
+import contextvars
 import glob
 import json
 import os
@@ -397,6 +398,100 @@ def _hermes_kanban_db_path():
         return None
 
 
+# --- the per-request board override (?board=<slug>): the one hook the board switcher rides ---
+# A request that names a board pins the ONE resolver (kanban_db) to that board's file for its own
+# lifetime: every read below it (board data, a card's graph, the acks, the owner's actions) serves
+# that board, and the active board - the pointer `hermes kanban boards switch` moves - never changes.
+# The proof suite's env pins still win (checked first in kanban_db), so a proof's board jail holds.
+
+_BOARD_DB = contextvars.ContextVar("crew_board_db", default=None)
+
+
+def board_db_override():
+    """The kanban.db path this request is pinned to, or None (the active board)."""
+    return _BOARD_DB.get()
+
+
+def set_board_db(path):
+    """Pin kanban_db() to this board's file until clear_board_db(); a context-local value, so
+    concurrent requests in one process never see each other's board."""
+    _BOARD_DB.set(path)
+
+
+def clear_board_db():
+    _BOARD_DB.set(None)
+
+
+def kanban_db_for(slug):
+    """The kanban.db of a named board, or None: the slug must be valid and name a live board. The
+    default board keeps its file at <kanban home>/kanban.db, a named board lives under
+    <kanban home>/kanban/boards/<slug>/ - the same layout _kanban_db_fallback mirrors."""
+    s = _valid_board_slug(slug)
+    if not s:
+        return None
+    if s == DEFAULT_BOARD:
+        path = os.path.join(kanban_home(), "kanban.db")
+    else:
+        b_dir = os.path.join(kanban_home(), "kanban", "boards", s)
+        if not _board_holds_live_board(b_dir):
+            return None
+        path = os.path.join(b_dir, "kanban.db")
+    return path if os.path.exists(path) else None
+
+
+def _board_display_name(slug):
+    """The display name of a board: board.json's name when it has one, else the slug (default: Default)."""
+    if slug == DEFAULT_BOARD:
+        return "Default"
+    try:
+        with open(os.path.join(kanban_home(), "kanban", "boards", slug, "board.json"),
+                  encoding="utf-8-sig") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict) and data.get("name"):
+            return str(data["name"])
+    except Exception:
+        pass
+    return slug
+
+
+def boards_summary(db=None):
+    """Every live board for the UI's board switcher: slug, display name, status counts and how many
+    runs are alive, plus the `current` flag - the board this call reads (the active board, or the
+    one a request pinned). One read-only sqlite open per board; a board that cannot be read is left
+    out rather than offered as an empty switch."""
+    current = board_slug(db or kanban_db())
+    boards, seen = [], set()
+    entries = [(DEFAULT_BOARD, os.path.join(kanban_home(), "kanban.db"))]
+    b_root = os.path.join(kanban_home(), "kanban", "boards")
+    try:
+        slugs = sorted(os.listdir(b_root))
+    except OSError:
+        slugs = []
+    for slug in slugs:
+        if slug != DEFAULT_BOARD and _board_holds_live_board(os.path.join(b_root, slug)):
+            entries.append((slug, os.path.join(b_root, slug, "kanban.db")))
+    for slug, path in entries:
+        if slug in seen or not os.path.exists(path):
+            continue
+        seen.add(slug)
+        counts, live = {}, 0
+        try:
+            con = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+            try:
+                for status, n in con.execute(
+                        "select status, count(*) from tasks where status != 'archived' group by status"):
+                    counts[status] = n
+                live = con.execute(
+                    "select count(distinct task_id) from task_runs where status = 'running'").fetchone()[0]
+            finally:
+                con.close()
+        except sqlite3.Error:
+            continue
+        boards.append({"slug": slug, "name": _board_display_name(slug), "current": slug == current,
+                       "counts": counts, "live": live})
+    return boards
+
+
 def kanban_db():
     """The crew's board file, or None. A HERMES_KANBAN_DB / KANBAN_DB pin naming an existing file wins (the proof
     board sets them); then Hermes's own resolver where hermes_cli is importable; else _kanban_db_fallback()."""
@@ -404,6 +499,9 @@ def kanban_db():
         path = path.strip()
         if path and os.path.exists(path):
             return path
+    path = board_db_override()      # a request's ?board= pin, under the env pins above
+    if path and os.path.exists(path):
+        return path
     path = _hermes_kanban_db_path()
     if path is not None:
         return path if os.path.exists(path) else None

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CrewApi } from './api'
 import type { CardJson } from './card-types'
 import type { Board } from './types'
+import { withBoard } from './components/boardUtil'
 
 // Polls /board.json. A failed poll keeps the last board and sets `error`, so a blip does not blank the page.
 // `query` is the flag string appended to the route, e.g. 'all=1&older=1' (no leading '?').
@@ -27,8 +28,9 @@ export function useBoard(api: CrewApi, intervalMs = 2000, query = '') {
 }
 
 // Polls /card/<id>.json (the card page's data). A failed poll keeps the last card and sets `error`. `paused` stops
-// the timer (the page's space key) and `reload()` fetches once now (its r key). A new id starts empty again.
-export function useCard(api: CrewApi, id: string, intervalMs = 2000, paused = false) {
+// the timer (the page's space key) and `reload()` fetches once now (its r key). A new id starts empty again. `board`
+// is the ?board= param: '' names the active board; another slug serves that board without moving the active one.
+export function useCard(api: CrewApi, id: string, intervalMs = 2000, paused = false, board?: string) {
   const [card, setCard] = useState<CardJson | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -39,7 +41,7 @@ export function useCard(api: CrewApi, id: string, intervalMs = 2000, paused = fa
     setLoading(true)
     const load = () =>
       api
-        .get<CardJson>('/card/' + encodeURIComponent(id) + '.json')
+        .get<CardJson>(withBoard('/card/' + encodeURIComponent(id) + '.json', board))
         .then(c => { if (live) { setCard(c); setError(null) } })
         .catch(e => { if (live) setError(String((e && e.message) || e)) })
         .finally(() => { if (live) setLoading(false) })

@@ -8,7 +8,7 @@ import baseCss from '../styles/base.css'
 import flowCss from '../styles/graph.css'
 import type { Tile } from '../types'
 import { roleIcon } from '../card-format'
-import { shortId } from './boardUtil'
+import { boardParam, shortId, store, withBoard } from './boardUtil'
 import { COLOUR, GLYPH } from './Graph'
 
 // The Desktop flow pane: the card page's flow graph, simplified to a narrow vertical chart of the card that runs now.
@@ -21,12 +21,12 @@ export interface FlowPaneProps {
   api: CrewApi
   // opens a Crew route (cardLink(id) or CREW_ROUTE) through the host router; absent on a shell without one
   navigate?: (path: string) => void
-  cardLink: (id: string) => string
+  cardLink: (id: string, stamp?: number, board?: string) => string
   boardLink: string
 }
 
-// The card's JSON, polled; the pane keeps its own small poll.
-function useLiveCard(api: CrewApi, id: string | null, intervalMs = 2000) {
+// The card's JSON, polled; the pane keeps its own small poll. `board` rides the call like everywhere else.
+function useLiveCard(api: CrewApi, id: string | null, intervalMs = 2000, board?: string) {
   const [card, setCard] = useState<CardJson | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
@@ -36,13 +36,13 @@ function useLiveCard(api: CrewApi, id: string | null, intervalMs = 2000) {
     let live = true
     const load = () =>
       api
-        .get<CardJson>('/card/' + id + '.json')
+        .get<CardJson>(withBoard('/card/' + id + '.json', board))
         .then(c => { if (live) { setCard(c); setError(null) } })
         .catch(e => { if (live) setError(String((e && e.message) || e)) })
     load()
     const timer = setInterval(load, intervalMs)
     return () => { live = false; clearInterval(timer) }
-  }, [api, id, intervalMs])
+  }, [api, id, intervalMs, board])
   return { card, error }
 }
 
@@ -123,7 +123,11 @@ function Chart({ card, go }: { card: CardJson; go: () => void }) {
 export function FlowPane({ api, navigate, cardLink, boardLink }: FlowPaneProps) {
   injectCss('base', baseCss)
   injectCss('graph', flowCss)
-  const { board, error: boardError } = useBoard(api)
+  // The pane's own board (independent of the page's): the flow pane can watch another board while the
+  // page shows this one. '' = the active board; the pick survives the pane's remounts.
+  const [boardSlug, setBoardSlug] = useState<string>(() => store('flow.board') || '')
+  const pickBoard = (slug: string) => { setBoardSlug(slug); store('flow.board', slug || null) }
+  const { board, error: boardError } = useBoard(api, 2000, boardParam(boardSlug))
   // running cards first, then the Needs-you ones
   const cards: Tile[] = []
   const seen = new Set<string>()
@@ -139,7 +143,7 @@ export function FlowPane({ api, navigate, cardLink, boardLink }: FlowPaneProps) 
   useEffect(() => { if (pick && !picked) setPick(null) }, [pick, picked])
   const cur = picked ?? cards[0] ?? null
   const onCardPage = useSyncExternalStore(subscribeCardPage, cardPageOpen, cardPageOpen)
-  const { card, error } = useLiveCard(api, cur && !onCardPage ? cur.id : null)
+  const { card, error } = useLiveCard(api, cur && !onCardPage ? cur.id : null, 2000, boardSlug)
   // The card page already draws the full flow: no chart (and no polling) here, one quiet line until the owner leaves it.
   if (onCardPage)
     return (
@@ -150,6 +154,18 @@ export function FlowPane({ api, navigate, cardLink, boardLink }: FlowPaneProps) 
   return (
     <div className="crew-scope crew-flow">
       <div className="fhint"><kbd>Ctrl+J</kbd> hides this pane</div>
+      {/* The pane's board switcher, next to the card one: a pick here never moves the active board. */}
+      {(board?.boards?.length || 0) > 1 ? (
+        <div className="fhead">
+          <select className="fsel" aria-label="Board" title="the board this pane watches - the active board never changes"
+            value={boardSlug || board?.boards?.find(b => b.current)?.slug || ''}
+            onChange={e => pickBoard(e.target.value)}>
+            {(board?.boards || []).map(b => (
+              <option key={b.slug} value={b.slug}>{b.name + (b.live ? ' - ' + b.live + ' working' : '')}</option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       {cur ? (
         <>
           <div className="fhead">
@@ -165,7 +181,7 @@ export function FlowPane({ api, navigate, cardLink, boardLink }: FlowPaneProps) 
             )}
           </div>
           {card && card.card_id === cur.id ? (
-            <Chart card={card} go={() => navigate?.(cardLink(cur.id))} />
+            <Chart card={card} go={() => navigate?.(cardLink(cur.id, Date.now(), boardSlug))} />
           ) : (
             <div className="fnone">{error ? 'Crew could not load the flow: ' + error : 'Loading the flow...'}</div>
           )}

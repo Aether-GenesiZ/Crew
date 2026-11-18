@@ -54,8 +54,9 @@ const NAMES: ActionName[] = ['unstuck', 'retry', 'proof', 'stop']
 // The four command buttons, one rule set for the card page and the board tile: Unstuck, Retry, Proof, Stop (behind
 // the app's confirm dialog). Proof is drawn only while the card has a proof question waiting (then it is enabled). Draws nothing without the host's actions. compact = the tile's row (no ids, since a
 // board shows many); the card page keeps its #act-* ids. onResult gets the answer text, onDone fires after it.
-export function ActionButtons({ subject, card, compact, only, onResult, onDone }: {
-  subject: ActionSubject; card: string; compact?: boolean; only?: ActionName[]; onResult(m: Msg): void; onDone(): void
+export function ActionButtons({ subject, card, compact, only, board, onResult, onDone }: {
+  subject: ActionSubject; card: string; compact?: boolean; only?: ActionName[]; board?: string
+  onResult(m: Msg): void; onDone(): void
 }) {
   const { actions } = useCrewHost()
   const [busy, setBusy] = useState<ActionName | null>(null)
@@ -77,7 +78,7 @@ export function ActionButtons({ subject, card, compact, only, onResult, onDone }
     }
     setBusy(name)
     try {
-      onResult(await actions.run(name, card, extra))
+      onResult(await actions.run(name, card, extra, board))
     } catch (e) {
       onResult({ ok: false, text: LABEL[name] + ' failed: ' + (e instanceof Error ? e.message : String(e)) })
     }
@@ -116,7 +117,7 @@ function useFlash(reset: string): [Msg | null, (m: Msg) => void] {
 
 // The Desktop button bar of the card page: the four buttons and Open chat. It exists only where the host brings
 // actions (Desktop); the browser draws nothing here. The answer shows under the bar and the page polls again at once.
-export function ActionBar({ card, openChat, onDone }: { card: CardJson; openChat?: OpenChat; onDone(): void }) {
+export function ActionBar({ card, openChat, board, onDone }: { card: CardJson; openChat?: OpenChat; board?: string; onDone(): void }) {
   const { actions } = useCrewHost()
   const [msg, show] = useFlash(card.card_id)
   if (!actions) return null
@@ -125,7 +126,7 @@ export function ActionBar({ card, openChat, onDone }: { card: CardJson; openChat
   return (
     <div id="actionbar" className="actionbar">
       <div className="abtns">
-        <ActionButtons subject={cardSubject(card)} card={card.card_id} onResult={show} onDone={onDone} />
+        <ActionButtons subject={cardSubject(card)} card={card.card_id} board={board} onResult={show} onDone={onDone} />
         {target && openChat ? (
           <Button id="act-chat" size="xs" variant="ghost" title="open the chat this card came from"
             onClick={() => openChat(target.profile, target.session)}>{'Open chat'}</Button>
@@ -139,7 +140,7 @@ export function ActionBar({ card, openChat, onDone }: { card: CardJson; openChat
 // The compact row under a board tile's chips (Desktop only; nothing without the host's actions): only on a card in
 // the Needs-you lane (blocked), and only Unstuck, Retry and Proof; Stop stays on the card page. A click here must
 // not open the card, so it stops at this wrapper. The board's own poll picks the change up within two seconds.
-export function TileActions({ t, lane }: { t: Tile; lane: string }) {
+export function TileActions({ t, lane, board }: { t: Tile; lane: string; board?: string }) {
   const { actions } = useCrewHost()
   const [msg, show] = useFlash(t.id)
   if (!actions || lane !== 'blocked') return null
@@ -147,7 +148,7 @@ export function TileActions({ t, lane }: { t: Tile; lane: string }) {
   return (
     <div className="tact" onClick={e => { e.preventDefault(); e.stopPropagation() }}>
       <div className="tbtns">
-        <ActionButtons compact only={['unstuck', 'retry', 'proof']} subject={subject} card={t.id} onResult={show} onDone={() => {}} />
+        <ActionButtons compact only={['unstuck', 'retry', 'proof']} subject={subject} card={t.id} board={board} onResult={show} onDone={() => {}} />
       </div>
       {msg ? <div role="status" className={'tmsg' + (msg.ok ? '' : ' bad')}>{msg.text}</div> : null}
     </div>

@@ -23,7 +23,9 @@ export interface ButtonProps {
 
 export interface CrewActions {
   // POST /action/<name> {card, ...extra}: the one allowlisted route per command; the backend validates the name again.
-  run(name: ActionName, card: string, extra?: Record<string, unknown>): Promise<ActionResult>
+  // `board` (the switcher's pick; '' = the active board) rides the body so the command lands on the board the
+  // view shows.
+  run(name: ActionName, card: string, extra?: Record<string, unknown>, board?: string): Promise<ActionResult>
   // The app's own confirm dialog: resolves true on Confirm, false on Cancel or Esc.
   confirm(title: string, body: string): Promise<boolean>
   // The app's Button (ui/button), so the bar looks like the rest of Desktop.

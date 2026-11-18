@@ -1797,6 +1797,9 @@ def build_graph(card_ref, steps_n=DEFAULT_STEPS):
         "card_id": card_id,
         "card_title": title,
         "card_status": card_row[2] if len(card_row) > 2 else "",
+        # The board this card lives on (the active board, or the one a ?board= request pinned): the
+        # card page shows it and its cross-links carry it.
+        "board": crew_card.board_slug(),
         # Read off the CARD node, never off the root: with a brief recorded the root is the brief.
         **card_box_fields(root_ev),
         "tokens": load_ledger_totals(card_id),

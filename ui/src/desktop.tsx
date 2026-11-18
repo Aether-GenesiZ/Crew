@@ -35,8 +35,9 @@ function Host({ api, kanban, children }: { api: CrewApi; kanban: KanbanRow | nul
     else if (Sd) h.renderMarkdown = text => <Sd>{text}</Sd>
     if (sdk.Button && sdk.ConfirmDialog)
       h.actions = {
-        // the route is POST /action/<name> {card, ...extra}; the backend allowlists the names again
-        run: (name, card, extra) => api.post('/action/' + name, { ...extra, card }),
+        // the route is POST /action/<name> {card, ...extra}; the backend allowlists the names again.
+        // `board` (the switcher's pick; '' = the active board) lands the command on the board the view shows.
+        run: (name, card, extra, board) => api.post('/action/' + name, { ...extra, card, ...(board ? { board } : {}) }),
         confirm: (title, body) => new Promise<boolean>(resolve => setAsk({ title, body, done: resolve })),
         Button: sdk.Button as NonNullable<CrewHost['actions']>['Button']
       }

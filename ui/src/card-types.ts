@@ -87,6 +87,8 @@ export interface CardJson {
   card_id: string
   card_title?: string
   card_status?: string
+  card_board?: string
+  board?: string
   card_role?: string
   card_model?: string
   card_created_at?: number | null

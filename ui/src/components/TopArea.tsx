@@ -43,7 +43,9 @@ export type OpenChat = (profile: string, session: string) => void
 
 // The top of the card page: the card's own state and fields, the pending reason (or the done report) and the
 // repeated-stops note. Three boxes, the third only when the card is looping.
-export function TopArea({ card, openChat, onAction }: { card: CardJson; openChat?: OpenChat; onAction?: () => void }) {
+export function TopArea({ card, openChat, board, onGraph, onAction }: {
+  card: CardJson; openChat?: OpenChat; board?: string; onGraph?: (board: string, id: string) => void; onAction?: () => void
+}) {
   const { actions } = useCrewHost()
   const s = card.situation || {}
   const cls = s.headline && s.headline.indexOf('stopped') === 0 ? 'blocked'
@@ -87,7 +89,18 @@ export function TopArea({ card, openChat, onAction }: { card: CardJson; openChat
           {/* fmtAge takes an AGE in seconds, not a timestamp: created_at straight in reads as 20000 days. */}
           {card.card_created_at ? <Field label="started" value={fmtAge(Date.now() / 1000 - card.card_created_at)} /> : null}
           <Field label="kanban id" value={card.card_id || ''} copy={{ id: 'cardIdCopy', title: 'copy the kanban id' }} />
+          <Field label="board" value={board || card.board || ''} />
           <Field label="coordinator" value={card.coordinator || ''} copy={{ id: 'cardCoCopy', title: 'copy the coordinator session' }} />
+          {/* Cross-link to the kanban graph (the Desktop shell brings its navigator; a browser draws nothing).
+              The board and id come from the card's own payload, so the deep link lands on the board the card lives on. */}
+          {onGraph ? (
+            <span className="fp">
+              <span className="fk">graph</span>
+              <button type="button" className="copy" id="cardGraph" title="open this card in the kanban graph"
+                aria-label="open this card in the kanban graph"
+                onClick={e => { e.stopPropagation(); onGraph(board || card.board || 'default', card.card_id || '') }}>{'kanban graph ↗'}</button>
+            </span>
+          ) : null}
           {/* The open chat button, on its own row, exists only where the host offers a chat to open. */}
           {target && openChat && !actions ? (
             <>
@@ -106,7 +119,7 @@ export function TopArea({ card, openChat, onAction }: { card: CardJson; openChat
           ) : null}
         </div>
         {/* Desktop only: the commands for this card (the bar draws nothing without host actions) */}
-        <ActionBar card={card} openChat={openChat} onDone={onAction || (() => {})} />
+        <ActionBar card={card} openChat={openChat} board={board} onDone={onAction || (() => {})} />
       </div>
       <div className="tcell" id="topWhy">
         <div className="tch" id="whyHead">{report ? 'done report' : 'pending reason'}</div>

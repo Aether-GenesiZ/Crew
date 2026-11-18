@@ -32,6 +32,7 @@ What replaces the daemon's own request checks (crew_graph_serve.Handler):
 from __future__ import annotations
 
 import base64
+import contextlib
 import importlib
 import importlib.util
 import json
@@ -235,6 +236,29 @@ def _flag(request: Request, name: str) -> bool:
     return request.query_params.get(name) == "1"
 
 
+@contextlib.contextmanager
+def _board(request: Request, body: dict | None = None):
+    """The ?board=/body board pin for one request - the board switcher's per-request override, the same
+    hook the standalone server applies: every builder below serves the named board (its data, its cards,
+    its acks, the owner's actions) while the active board - the pointer `hermes kanban boards switch`
+    moves - never changes. A slug naming no live board is a 404; the proof suite's env pins still win
+    inside crew_card.kanban_db(), so a proof's board jail holds."""
+    slug = str((body or {}).get("board") or request.query_params.get("board") or "").strip()
+    if not slug:
+        yield
+        return
+    _crew()                                  # puts scripts/ on sys.path so crew_card imports by bare name
+    crew_card = importlib.import_module("crew_card")
+    db = crew_card.kanban_db_for(slug)
+    if not db:
+        raise HTTPException(status_code=404, detail="unknown board: %s" % slug)
+    crew_card.set_board_db(db)
+    try:
+        yield
+    finally:
+        crew_card.clear_board_db()
+
+
 def _board_json(request: Request):
     show_all, older = _flag(request, "all"), _flag(request, "older")
     return lambda crew: (200, crew.board_json(show_all, older), "application/json")
@@ -287,21 +311,24 @@ def get_app_js(request: Request):
 
 @router.get("/board.json")
 def get_board_json(request: Request):
-    return _render(request, _board_json(request))
+    with _board(request):
+        return _render(request, _board_json(request))
 
 
 @router.get("/card/{card_id}")
 def get_card(card_id: str, request: Request):
     if not _CARD_ID_RE.match(card_id):
         raise HTTPException(status_code=400, detail="Invalid card ID format")
-    return _render(request, _card(card_id))
+    with _board(request):
+        return _render(request, _card(card_id))
 
 
 @router.post("/ack/{action}")
 def post_ack(action: str, request: Request):
     if not _ACK_PATH_RE.match(action):
         raise HTTPException(status_code=400, detail="Invalid ack target format")
-    return _render(request, _ack(action, _flag(request, "undo")))
+    with _board(request):
+        return _render(request, _ack(action, _flag(request, "undo")))
 
 
 @router.get("/avatars/{avatar_path:path}")
@@ -313,7 +340,8 @@ def get_avatars(avatar_path: str, request: Request):
 
 @router.get("/healthz")
 def get_healthz(request: Request):
-    return _render(request, _health)
+    with _board(request):
+        return _render(request, _health)
 
 
 # --- Hermes Desktop (desktop/plugin.js): ctx.rest answers JSON only, so a face comes as a data URL and an ack's
@@ -329,7 +357,8 @@ def get_embed_avatar(avatar_path: str, request: Request):
 def post_embed_ack(action: str, request: Request):
     if not _ACK_PATH_RE.match(action):
         raise HTTPException(status_code=400, detail="Invalid ack target format")
-    return _render(request, _ack(action, _flag(request, "undo")), embed="text")
+    with _board(request):
+        return _render(request, _ack(action, _flag(request, "undo")), embed="text")
 
 
 # --- Hermes Desktop buttons: one POST per command, the same function the slash command calls, {ok, text} back.
@@ -367,7 +396,7 @@ def _run_action(name: str, card: str, mode: str) -> tuple[bool, str]:
 
 
 @router.post("/action/{name}")
-def post_action(name: str, body: dict | None = Body(default=None)):
+def post_action(name: str, request: Request, body: dict | None = Body(default=None)):
     body = body if isinstance(body, dict) else {}
     if name not in _ACTION_NAMES:
         return _action_error(400, "unknown action")
@@ -380,7 +409,8 @@ def post_action(name: str, body: dict | None = Body(default=None)):
     if name == "stop" and body.get("confirm") is not True:
         return _action_error(400, "stop parks the card and kills its run: send confirm true")
     try:
-        ok, text = _run_action(name, card, mode)
+        with _board(request, body):
+            ok, text = _run_action(name, card, mode)
     except Exception as exc:  # noqa: BLE001 - a button press must answer, never hang the page
         _log.exception("crew dashboard: action %s on %s failed", name, card)
         return JSONResponse(content={"ok": False, "text": "%s failed - see the dashboard log" % name}, headers=dict(_RESPONSE_HEADERS))

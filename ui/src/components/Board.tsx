@@ -8,7 +8,7 @@ import { injectCss } from '../css'
 import type { AttentionRow, Board as BoardData } from '../types'
 import baseCss from '../styles/base.css'
 import boardCss from '../styles/board.css'
-import { fmt, hhmm, store } from './boardUtil'
+import { boardParam, fmt, hhmm, store, withBoard } from './boardUtil'
 import { Lane } from './Lane'
 
 export interface BoardFlags {
@@ -21,6 +21,10 @@ interface Props {
   flags?: BoardFlags                 // ?all=1 and "Show older"; when absent the board reads ?all=1 from the page URL
   onFlags?(f: BoardFlags): void
   home?(): void                      // the header mark's click; without it the mark is a plain link to "/"
+  // The switcher: `boardSlug` is the slug this view shows ('' = the active board) and rides every call and
+  // link it makes; `onBoard` is the shell's way to pick another one (no switcher is drawn without it).
+  boardSlug?: string
+  onBoard?(slug: string): void
 }
 
 // The header's status counts: (tone class, word, statuses).
@@ -35,7 +39,7 @@ const BELL = (
 // The board (ui-spec section 4), ported from scripts/crew_dashboard/board.js: one header line with the board's own
 // facts, the lanes in the order the server sends them, the bell with its list. Same DOM and class names as the old
 // page, so the ported board.css applies unchanged.
-export function Board({ api, onOpenCard, flags, onFlags, home }: Props) {
+export function Board({ api, onOpenCard, flags, onFlags, home, boardSlug, onBoard }: Props) {
   injectCss('base', baseCss)
   injectCss('board', boardCss)
   const { kanbanRow } = useCrewHost()
@@ -46,7 +50,7 @@ export function Board({ api, onOpenCard, flags, onFlags, home }: Props) {
     if (typeof location !== 'undefined' && location.hash === '#archived') store('archived.open', '1')   // a link that opens the column
     return !!store('archived.open')
   })
-  const query = [all ? 'all=1' : '', older ? 'older=1' : ''].filter(Boolean).join('&')
+  const query = [all ? 'all=1' : '', older ? 'older=1' : '', boardParam(boardSlug)].filter(Boolean).join('&')
   const { board, error, loading, refresh } = useBoard(api, 2000, query)
 
   const setOlderFlag = (on: boolean) => {
@@ -78,7 +82,7 @@ export function Board({ api, onOpenCard, flags, onFlags, home }: Props) {
   }, [])
   const ack = (path: string, ids: string[]) => {
     setCleared(c => new Set([...c, ...ids]))
-    api.post<AckResult>(path).then(refresh, refresh)
+    api.post<AckResult>(withBoard(path, boardSlug)).then(refresh, refresh)
   }
 
   if (!board) {
@@ -104,6 +108,24 @@ export function Board({ api, onOpenCard, flags, onFlags, home }: Props) {
           <i></i>LIVE
         </span>
         <h1>crew board</h1>
+        {/* The switcher: which live board this view shows. A pick here never moves the active board
+            (the one `hermes kanban boards switch` changes) - it only retargets this view, so two
+            views can sit on two boards at once. */}
+        {onBoard && (board.boards?.length || 0) > 1 ? (
+          <select id="boardpick" className="boardpick"
+            title="the board this view shows - the active board never changes"
+            value={boardSlug || (board.boards || []).find(b => b.current)?.slug || ''}
+            onChange={e => onBoard(e.target.value)}>
+            {(board.boards || []).map(b => {
+              const n = (b.counts?.blocked || 0) + (b.counts?.triage || 0)
+              return (
+                <option key={b.slug} value={b.slug}>
+                  {b.name + (b.live ? ` - ${b.live} working` : '') + (n ? ` - ${n} blocked` : '')}
+                </option>
+              )
+            })}
+          </select>
+        ) : null}
         <span className="meta" id="cards">{cards + ' card' + (cards === 1 ? '' : 's')}</span>
         <span className={'meta' + (live ? ' on' : '')} id="live">{live ? live + ' working now' : 'nothing running'}</span>
         <div className="stats" id="counts">
@@ -135,7 +157,7 @@ export function Board({ api, onOpenCard, flags, onFlags, home }: Props) {
                 {rows.length ? rows.map(r => (
                   <div key={r.id} className={'ar' + (r.status !== 'done' ? ' stuck' : '')}>
                     <span className="st">{r.status}</span>
-                    <a className="t" href={'/card/' + r.id} onClick={e => { e.preventDefault(); setNotesOpen(false); onOpenCard(r.id) }}>
+                    <a className="t" href={withBoard('/card/' + r.id, boardSlug)} onClick={e => { e.preventDefault(); setNotesOpen(false); onOpenCard(r.id) }}>
                       {r.id + ' - ' + (r.title || '(untitled)')}
                     </a>
                     <span className="w">{r.who || '-'}</span>
@@ -160,8 +182,8 @@ export function Board({ api, onOpenCard, flags, onFlags, home }: Props) {
       ) : null}
       <main id="board">
         {board.lanes.map(l => (
-          <Lane key={l.key} lane={l} api={api} archivedOpen={archivedOpen} older={older} onToggleArchived={toggleArchived}
-            onOlder={setOlderFlag} onOpenCard={onOpenCard} />
+          <Lane key={l.key} lane={l} api={api} board={boardSlug} archivedOpen={archivedOpen} older={older}
+            onToggleArchived={toggleArchived} onOlder={setOlderFlag} onOpenCard={onOpenCard} />
         ))}
       </main>
     </div>

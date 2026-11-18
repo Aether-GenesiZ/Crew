@@ -4,8 +4,9 @@ import { fetchApi, type CrewApi } from './api'
 import { Board } from './components/Board'
 import { CardPage } from './components/CardPage'
 import type { OpenChat } from './components/TopArea'
-import { cardFromSearch } from './open-card'
+import { cardFromSearch, boardFromQuery } from './open-card'
 import { hrefFor, parseLocation, type Route } from './route'
+import { store } from './components/boardUtil'
 
 // How a host page wires the app in. The served shell passes nothing (same origin, the address bar is the route).
 // The Hermes web dashboard tab passes `base` (its plugin API prefix), the SDK's authed `fetch` and an `openChat`.
@@ -29,13 +30,16 @@ function snapshotApi(snap: any): CrewApi {
 // Terminal mode: the served page has <div id="crew-app">. The route comes from location.pathname; moving between the
 // board and a card pushes history, so the back button and a reload land where the owner was. Inside a host page
 // (`base` set) the address bar belongs to the host, so the route is state only. A snapshot file shows its one card.
+// The board switcher's pick (`?board=<slug>`, '' = the active board) rides the same route: pushed to the address bar
+// in terminal mode, state + sessionStorage in a host page.
 function App({ opts }: { opts: MountOptions }) {
   const snap = (window as any).__CREW_SNAPSHOT
   const hosted = !!opts.base
   const api = useMemo(() => snap ? snapshotApi(snap) : fetchApi(opts.base || '', opts.fetch, !hosted), [snap, opts.base, opts.fetch, hosted])
   const shared = cardFromSearch(window.location.search)   // a shared card link ("/crew?card=<id>") opens that card
   const start = (): Route => snap ? { page: 'card', id: snap.card_id }
-    : hosted ? (shared ? { page: 'card', id: shared } : { page: 'board', all: false })
+    : hosted ? (shared ? { page: 'card', id: shared, board: boardFromQuery(window.location.search) }
+      : { page: 'board', all: false, ...(store('tab.board') ? { board: store('tab.board')! } : {}) })
     : parseLocation(window.location.pathname, window.location.search)
   const [route, setRoute] = useState<Route>(start)
   useEffect(() => {
@@ -47,14 +51,19 @@ function App({ opts }: { opts: MountOptions }) {
   const go = (r: Route) => {
     if (snap) return
     if (!hosted) try { window.history.pushState(null, '', hrefFor(r)) } catch { /* a sandboxed page keeps the route in state only */ }
+    if (hosted && r.page === 'board' && r.board !== undefined) store('tab.board', r.board || null)
     setRoute(r)
   }
-  const home = () => go({ page: 'board', all: false })
+  const home = () => go({ page: 'board', all: false, board: route.board })
+  const pickBoard = (slug: string) => go({ page: 'board', all: false, board: slug })
   const openChat = opts.openChat ?? (typeof (window as any).__crewOpenChat === 'function'
     ? (profile: string, session: string) => (window as any).__crewOpenChat(profile, session) : undefined)
+  const backHref = hosted ? '/' : hrefFor({ page: 'board', all: false, board: route.board })
   return route.page === 'card'
-    ? <CardPage api={api} id={route.id} onBack={home} openChat={openChat} hash={!hosted && !snap} />
-    : <Board api={api} onOpenCard={id => go({ page: 'card', id })} home={home}
+    ? <CardPage api={api} id={route.id} onBack={home} openChat={openChat} board={route.board}
+        hash={!hosted && !snap} boardHref={backHref} />
+    : <Board api={api} onOpenCard={id => go({ page: 'card', id, board: route.board })} home={home}
+        boardSlug={route.board} onBoard={pickBoard}
         flags={hosted ? { all: false } : { all: route.all, ...(route.older ? { older: true } : {}) }} />
 }
 

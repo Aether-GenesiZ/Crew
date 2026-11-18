@@ -31,6 +31,19 @@ export function store(k: string, v?: string | null): string | null | void {
   }
 }
 
+// The board a view is on ('' = the active board: no ?board= param, the pre-switcher behavior).
+// Every route call and link a view makes carries it, so two views can sit on two boards at once.
+export function boardParam(board?: string | null): string {
+  const slug = (board || '').trim()
+  return slug && /^[a-z0-9][a-z0-9_-]*$/.test(slug) ? 'board=' + encodeURIComponent(slug) : ''
+}
+
+// path with the board param appended ('' board: path unchanged), merging into an existing query.
+export function withBoard(path: string, board?: string | null): string {
+  const q = boardParam(board)
+  return q ? path + (path.includes('?') ? '&' : '?') + q : path
+}
+
 export const TONE: Record<string, string> = {
   blocked: 'var(--crew-tone-blocked)', triage: 'var(--crew-tone-blocked)', running: 'var(--crew-tone-running)',
   review: 'var(--crew-tone-review)', ready: 'var(--crew-tone-ready)', todo: 'var(--crew-tone-neutral)',

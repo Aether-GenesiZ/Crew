@@ -24,6 +24,11 @@ export interface CardPageProps {
   onBack(): void
   // Shows the "open chat" button where the host can open a chat session (Desktop, the dashboard tab).
   openChat?: OpenChat
+  // The board this card lives on ('' = the active board): rides the card's poll, its acks and its
+  // command buttons, and the cross-link to the kanban graph (onGraph) carries it.
+  board?: string
+  // Cross-link to the kanban graph (only where the shell can navigate: Desktop draws it, a browser not).
+  onGraph?: (board: string, id: string) => void
   // Read #node=<id>&tab=<name>&role=<name>&rail=collapsed from the address bar and keep it current (browser only:
   // Desktop owns its own hash).
   hash?: boolean
@@ -39,11 +44,11 @@ function readRail(): boolean {
 // line, the top boxes, the role strip, the rail, the step panel, the scrubber and the status bar around <Graph>.
 // It polls the card JSON every 2 s and redraws in place: every list is keyed by the data's own keys, so a poll never
 // remounts a list, loses a scroll offset or drops a text selection.
-export function CardPage({ api, id, onBack, openChat, hash = false, boardHref = '/' }: CardPageProps) {
+export function CardPage({ api, id, onBack, openChat, board, onGraph, hash = false, boardHref = '/' }: CardPageProps) {
   injectCss('base', baseCss)
   injectCss('card', cardCss)
   const [paused, setPaused] = useState(false)
-  const { card, error, loading, reload } = useCard(api, id, 2000, paused)
+  const { card, error, loading, reload } = useCard(api, id, 2000, paused, board)
   const [selected, setSelected] = useState<string | null>(null)
   const [selStep, setSelStep] = useState(-1)
   const [panelOpen, setPanelOpen] = useState(false)
@@ -138,7 +143,7 @@ export function CardPage({ api, id, onBack, openChat, hash = false, boardHref = 
         }}><img src={MARK_URI} alt="" width={26} height={26} /></a>
         <EventLine card={card} />
         <div id="main">
-          <TopArea card={card} openChat={openChat} onAction={reload} />
+          <TopArea card={card} openChat={openChat} board={board} onGraph={onGraph} onAction={reload} />
           <Roster />
           <div id="row">
             <Rail card={card} collapsed={railCollapsed} onToggle={toggleRail} onBack={onBack} href={boardHref} />

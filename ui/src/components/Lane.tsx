@@ -9,6 +9,7 @@ interface Props {
   api: CrewApi
   archivedOpen: boolean
   older: boolean
+  board?: string
   onToggleArchived(): void
   onOlder(on: boolean): void
   onOpenCard(id: string): void
@@ -25,7 +26,7 @@ function LaneBody({ laneKey, children }: { laneKey: string; children: React.Reac
 }
 
 // One lane: same DOM and class names as board.js laneHTML (a rail when empty or when Archived is collapsed).
-export function Lane({ lane: l, api, archivedOpen, older, onToggleArchived, onOlder, onOpenCard }: Props) {
+export function Lane({ lane: l, api, archivedOpen, older, board, onToggleArchived, onOlder, onOpenCard }: Props) {
   const tone = { '--tone': TONE[l.key] || 'var(--crew-tone-neutral)' } as CSSProperties
   const n = l.tiles.length + (l.hidden || 0)
   const key = (fn: () => void) => (e: KeyboardEvent) => {
@@ -54,7 +55,7 @@ export function Lane({ lane: l, api, archivedOpen, older, onToggleArchived, onOl
         <i></i><span className="lt">{l.label}</span><span className="ln">{n}</span>
       </div>
       <LaneBody laneKey={l.key}>
-        {l.tiles.map(t => <CardTile key={t.id} t={t} lane={l.key} api={api} onOpen={onOpenCard} />)}
+        {l.tiles.map(t => <CardTile key={t.id} t={t} lane={l.key} api={api} board={board} onOpen={onOpenCard} />)}
         {l.hidden && l.key === 'done' ? (
           <button className="more" data-older="1" onClick={() => onOlder(true)}>Show {+l.hidden || 0} older</button>
         ) : l.key === 'done' && older ? (

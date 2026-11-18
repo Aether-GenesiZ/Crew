@@ -39,7 +39,7 @@ function Avatar({ api, name, hue }: { api: CrewApi; name: string; hue?: string }
 }
 
 // One tile: same DOM and class names as board.js cardHTML.
-export function CardTile({ t, lane, api, onOpen }: { t: Tile; lane: string; api: CrewApi; onOpen(id: string): void }) {
+export function CardTile({ t, lane, api, board, onOpen }: { t: Tile; lane: string; api: CrewApi; board?: string; onOpen(id: string): void }) {
   const who = t.active ? t.active.profile : t.role || t.assignee || 'unassigned'
   const b = t.budget
   const quiet = !!t.active && t.active.quiet_s !== null && t.active.quiet_s !== undefined && t.active.quiet_s > QUIET_S
@@ -68,7 +68,7 @@ export function CardTile({ t, lane, api, onOpen }: { t: Tile; lane: string; api:
           <span className="id" title={t.id}>{shortId(t.id)}</span>
         </span>
       </div>
-      <TileActions t={t} lane={lane} />
+      <TileActions t={t} lane={lane} board={board} />
     </a>
   )
 }

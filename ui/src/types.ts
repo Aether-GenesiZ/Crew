@@ -39,6 +39,15 @@ export interface Attention {
   total?: number
   ack_all?: string
 }
+// One row of the board switcher (board.json boards): a live board with its status counts. `current`
+// marks the board this body shows - the active board, or the one ?board= pinned for this request.
+export interface BoardSummary {
+  slug: string
+  name: string
+  current?: boolean
+  live?: number
+  counts?: Record<string, number>
+}
 export interface Board {
   lanes: Lane[]
   counts: Record<string, number>
@@ -50,6 +59,8 @@ export interface Board {
   // Optional header facts (the header's "<node> - kanban[ <slug>] link"); the browser falls back to its own origin.
   board?: string
   dashboard_url?: string
+  // Every live board, for the switcher (absent from an older server: no switcher is drawn).
+  boards?: BoardSummary[]
   // Is the Hermes gateway (it runs the kanban dispatcher) up? Absent from an older server: no strip is drawn.
   dispatcher?: { alive?: boolean; detail?: string; command?: string }
 }
