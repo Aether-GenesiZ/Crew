@@ -9,6 +9,9 @@ export interface BlockedToast {
   title: string
   message: string
   detail: string
+  // The slug of the board this card is on (the payload's own `board`): the toast's link carries it, so
+  // the jump lands on the board the card lives on even when the page was last on another one.
+  board?: string
 }
 
 export function blockedWatch(read: () => Promise<Board>, onBlocked: (t: BlockedToast) => void): () => Promise<void> {
@@ -24,6 +27,6 @@ export function blockedWatch(read: () => Promise<Board>, onBlocked: (t: BlockedT
     const before = seen
     seen = new Set(now.keys())
     if (!before) return
-    for (const [id, title] of now) if (!before.has(id)) onBlocked({ id, title, message: title || id, detail: id })
+    for (const [id, title] of now) if (!before.has(id)) onBlocked({ id, title, message: title || id, detail: id, board: board.board })
   }
 }

@@ -335,10 +335,10 @@ def get_card(card_id: str, request: Request):
 
 
 @router.post("/ack/{action}")
-def post_ack(action: str, request: Request):
+def post_ack(action: str, request: Request, body: dict | None = Body(default=None)):
     if not _ACK_PATH_RE.match(action):
         raise HTTPException(status_code=400, detail="Invalid ack target format")
-    with _board(request):
+    with _board(request, body if isinstance(body, dict) else None):
         return _render(request, _ack(action, _flag(request, "undo")))
 
 
@@ -365,10 +365,10 @@ def get_embed_avatar(avatar_path: str, request: Request):
 
 
 @router.post("/embed/ack/{action}")
-def post_embed_ack(action: str, request: Request):
+def post_embed_ack(action: str, request: Request, body: dict | None = Body(default=None)):
     if not _ACK_PATH_RE.match(action):
         raise HTTPException(status_code=400, detail="Invalid ack target format")
-    with _board(request):
+    with _board(request, body if isinstance(body, dict) else None):
         return _render(request, _ack(action, _flag(request, "undo")), embed="text")
 
 
@@ -422,6 +422,8 @@ def post_action(name: str, request: Request, body: dict | None = Body(default=No
     try:
         with _board(request, body):
             ok, text = _run_action(name, card, mode)
+    except HTTPException:
+        raise                     # an unknown board stays a 404, not a swallowed {ok: false} action answer
     except Exception as exc:  # noqa: BLE001 - a button press must answer, never hang the page
         _log.exception("crew dashboard: action %s on %s failed", name, card)
         return JSONResponse(content={"ok": False, "text": "%s failed - see the dashboard log" % name}, headers=dict(_RESPONSE_HEADERS))

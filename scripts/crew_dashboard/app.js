@@ -12887,6 +12887,11 @@
     const [loading, setLoading] = (0, import_react2.useState)(true);
     const [tick, setTick] = (0, import_react2.useState)(0);
     (0, import_react2.useEffect)(() => {
+      setBoard(null);
+      setError(null);
+      setLoading(true);
+    }, [query]);
+    (0, import_react2.useEffect)(() => {
       let live = true;
       const load = () => api.get("/board.json" + (query ? "?" + query : "")).then((b) => {
         if (live) {
@@ -12937,7 +12942,7 @@
         live = false;
         clearInterval(timer);
       };
-    }, [api, id, intervalMs, paused]);
+    }, [api, id, intervalMs, paused, board]);
     const reload = (0, import_react2.useCallback)(() => loadRef.current(), []);
     return { card, error, loading, reload };
   }
@@ -13531,7 +13536,7 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
       e.preventDefault();
       onOpen(t.id);
     };
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("a", { className: "card" + motion, "data-id": t.id, href: "/card/" + t.id, style: tone(TONE[t.status] || "var(--crew-tone-neutral)"), onClick: open, children: [
+    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("a", { className: "card" + motion, "data-id": t.id, href: withBoard("/card/" + t.id, board), style: tone(TONE[t.status] || "var(--crew-tone-neutral)"), onClick: open, children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ti", children: t.title || "(untitled)" }),
       t.summary ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "su", children: t.summary }) : null,
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "ft", children: [
@@ -13682,7 +13687,8 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
       setCleared((c) => /* @__PURE__ */ new Set([...c, ...ids]));
       api.post(withBoard(path, boardSlug)).then(refresh, refresh);
     };
-    if (!board) {
+    const stale = !!board && !!boardSlug && board.board !== void 0 && board.board !== boardSlug;
+    if (!board || stale) {
       const box = { padding: 16, fontFamily: "var(--crew-font)" };
       return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: box, children: error ? "Crew could not load: " + error : loading ? "Loading..." : "" });
     }
@@ -15874,8 +15880,8 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
   var CARD_ID = /^[A-Za-z0-9_-]+$/;
   var BOARD_SLUG = /^[a-z0-9][a-z0-9_-]*$/;
   function boardFromQuery(search) {
-    const m = /^#?\/crew\?(.*)$/.exec(search || "");
-    const id = m ? new URLSearchParams(m[1]).get("board") || "" : "";
+    const q = (search || "").replace(/^#?\/crew\??/, "").replace(/^\?/, "");
+    const id = new URLSearchParams(q).get("board") || "";
     return BOARD_SLUG.test(id) ? id : "";
   }
   function cardFromSearch(search) {

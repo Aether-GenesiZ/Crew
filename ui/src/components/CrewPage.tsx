@@ -27,7 +27,9 @@ export function CrewPage({ api }: { api: CrewApi }) {
     const go = () => {
       const id = cardFromHash(window.location.hash)
       const slug = boardFromQuery(window.location.hash)
-      if (slug) setBoardSlug(slug)
+      // A link WITH a board uses it; a link WITHOUT one means the ACTIVE board, not whatever this page
+      // was last viewing - a bare card id must not inherit a stale board pick.
+      setBoardSlug(slug)
       if (id) setRoute({ page: 'card', id })
     }
     go()

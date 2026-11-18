@@ -925,8 +925,21 @@ def render_body(c):
     return "\n".join(lines) + "\n"
 
 
+def _child_env():
+    """The environment for a child process that resolves its own board (the hermes CLI): the request's
+    board override, when one is set. A ContextVar cannot cross a process boundary; HERMES_KANBAN_BOARD
+    can - it is the first candidate Hermes's own resolver reads - so an action's subprocess lands on the
+    same board the request reads, not the active one. None (the child inherits) when no override is set."""
+    ov = board_db_override()
+    if not ov:
+        return None
+    slug = board_slug(ov)
+    return dict(os.environ, HERMES_KANBAN_BOARD=slug) if slug else None
+
+
 def _kanban(args, timeout=120):
-    return subprocess.run([hermes_bin(), "kanban"] + args, capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+    return subprocess.run([hermes_bin(), "kanban"] + args, capture_output=True, text=True, timeout=timeout,
+                          encoding="utf-8", errors="replace", env=_child_env())
 
 
 def _created_id(result):
@@ -2412,7 +2425,10 @@ def lift_block(card_id, profile=None, body=None):
     elif row[2] in ("blocked", "scheduled"):
         cmd = [hermes_bin()] + (["-p", profile] if profile else []) + ["kanban", "unblock", card_id]
         try:
-            done = subprocess.run(cmd, capture_output=True, text=True, timeout=180, encoding="utf-8", errors="replace")
+            # env: the request's board override rides along, so the unblock lands on the board the
+            # card was read from - a ContextVar cannot cross into the child Hermes resolves its own.
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=180, encoding="utf-8", errors="replace",
+                                  env=_child_env())
         except OSError as exc:      # no runnable hermes (Windows raises where POSIX returns 127): a failed call,
             res = {"rc": 127, "out": "hermes did not start: %s" % str(exc)[:160]}   # so callers take their fallback
         else:

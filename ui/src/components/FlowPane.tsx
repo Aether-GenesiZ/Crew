@@ -189,7 +189,7 @@ export function FlowPane({ api, navigate, cardLink, boardLink }: FlowPaneProps) 
       ) : (
         <div className="fnone">
           {boardError && !board ? 'Crew could not load: ' + boardError : 'Nothing running'}
-          {' '}<a href="#" className="fboard" onClick={e => { e.preventDefault(); navigate?.(boardLink) }}>Open the board</a>
+          {' '}<a href="#" className="fboard" onClick={e => { e.preventDefault(); navigate?.(withBoard(boardLink, boardSlug)) }}>Open the board</a>
         </div>
       )}
     </div>

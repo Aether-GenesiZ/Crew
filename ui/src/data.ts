@@ -11,6 +11,9 @@ export function useBoard(api: CrewApi, intervalMs = 2000, query = '') {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [tick, setTick] = useState(0)
+  // A changed query (another board, another flag set) means the payload in hand belongs to the old
+  // view: drop it instead of showing the previous board with the new view's acks and actions.
+  useEffect(() => { setBoard(null); setError(null); setLoading(true) }, [query])
   useEffect(() => {
     let live = true
     const load = () =>
@@ -50,7 +53,7 @@ export function useCard(api: CrewApi, id: string, intervalMs = 2000, paused = fa
     if (paused) return () => { live = false }
     const timer = setInterval(load, intervalMs)
     return () => { live = false; clearInterval(timer) }
-  }, [api, id, intervalMs, paused])
+  }, [api, id, intervalMs, paused, board])
   const reload = useCallback(() => loadRef.current(), [])
   return { card, error, loading, reload }
 }

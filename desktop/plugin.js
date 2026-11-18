@@ -68,7 +68,7 @@ function blockedWatch(read, onBlocked) {
     const before = seen;
     seen = new Set(now.keys());
     if (!before) return;
-    for (const [id, title] of now) if (!before.has(id)) onBlocked({ id, title, message: title || id, detail: id });
+    for (const [id, title] of now) if (!before.has(id)) onBlocked({ id, title, message: title || id, detail: id, board: board.board });
   };
 }
 
@@ -148,8 +148,8 @@ function cardFromHash(hash) {
 }
 var BOARD_SLUG = /^[a-z0-9][a-z0-9_-]*$/;
 function boardFromQuery(search) {
-  const m = /^#?\/crew\?(.*)$/.exec(search || "");
-  const id = m ? new URLSearchParams(m[1]).get("board") || "" : "";
+  const q = (search || "").replace(/^#?\/crew\??/, "").replace(/^\?/, "");
+  const id = new URLSearchParams(q).get("board") || "";
   return BOARD_SLUG.test(id) ? id : "";
 }
 
@@ -195,6 +195,11 @@ function useBoard(api, intervalMs = 2e3, query = "") {
   const [error, setError] = useState2(null);
   const [loading, setLoading] = useState2(true);
   const [tick, setTick] = useState2(0);
+  useEffect2(() => {
+    setBoard(null);
+    setError(null);
+    setLoading(true);
+  }, [query]);
   useEffect2(() => {
     let live = true;
     const load = () => api.get("/board.json" + (query ? "?" + query : "")).then((b) => {
@@ -246,7 +251,7 @@ function useCard(api, id, intervalMs = 2e3, paused = false, board) {
       live = false;
       clearInterval(timer);
     };
-  }, [api, id, intervalMs, paused]);
+  }, [api, id, intervalMs, paused, board]);
   const reload = useCallback(() => loadRef.current(), []);
   return { card, error, loading, reload };
 }
@@ -840,7 +845,7 @@ function CardTile({ t, lane, api, board, onOpen }) {
     e.preventDefault();
     onOpen(t.id);
   };
-  return /* @__PURE__ */ jsxs2("a", { className: "card" + motion, "data-id": t.id, href: "/card/" + t.id, style: tone(TONE[t.status] || "var(--crew-tone-neutral)"), onClick: open2, children: [
+  return /* @__PURE__ */ jsxs2("a", { className: "card" + motion, "data-id": t.id, href: withBoard("/card/" + t.id, board), style: tone(TONE[t.status] || "var(--crew-tone-neutral)"), onClick: open2, children: [
     /* @__PURE__ */ jsx2("div", { className: "ti", children: t.title || "(untitled)" }),
     t.summary ? /* @__PURE__ */ jsx2("div", { className: "su", children: t.summary }) : null,
     /* @__PURE__ */ jsxs2("div", { className: "ft", children: [
@@ -991,7 +996,8 @@ function Board({ api, onOpenCard, flags, onFlags, home, boardSlug, onBoard }) {
     setCleared((c) => /* @__PURE__ */ new Set([...c, ...ids]));
     api.post(withBoard(path, boardSlug)).then(refresh, refresh);
   };
-  if (!board) {
+  const stale = !!board && !!boardSlug && board.board !== void 0 && board.board !== boardSlug;
+  if (!board || stale) {
     const box = { padding: 16, fontFamily: "var(--crew-font)" };
     return /* @__PURE__ */ jsx4("div", { style: box, children: error ? "Crew could not load: " + error : loading ? "Loading..." : "" });
   }
@@ -3299,7 +3305,7 @@ function CrewPage({ api }) {
     const go = () => {
       const id = cardFromHash(window.location.hash);
       const slug = boardFromQuery(window.location.hash);
-      if (slug) setBoardSlug(slug);
+      setBoardSlug(slug);
       if (id) setRoute({ page: "card", id });
     };
     go();
@@ -3491,7 +3497,7 @@ function FlowPane({ api, navigate, cardLink: cardLink2, boardLink }) {
       " ",
       /* @__PURE__ */ jsx20("a", { href: "#", className: "fboard", onClick: (e) => {
         e.preventDefault();
-        navigate?.(boardLink);
+        navigate?.(withBoard(boardLink, boardSlug));
       }, children: "Open the board" })
     ] })
   ] });
@@ -3573,7 +3579,7 @@ function watchBlocked(ctx, api) {
       title: "Crew: a card needs you",
       message: t.message,
       detail: t.detail,
-      action: { label: "Open in Crew", onClick: () => host3.navigate?.(cardLink(t.id)) }
+      action: { label: "Open in Crew", onClick: () => host3.navigate?.(cardLink(t.id, Date.now(), t.board)) }
     });
     try {
       ctx.os?.notify({ title: "Crew: a card needs you", body: t.message + "\n" + t.detail });

@@ -3,7 +3,7 @@ import type { CrewApi } from '../api'
 import { useAvatar } from '../avatars'
 import type { Tile } from '../types'
 import { TileActions } from './ActionBar'
-import { fmt, QUIET_S, shortId, TONE } from './boardUtil'
+import { fmt, QUIET_S, shortId, TONE, withBoard } from './boardUtil'
 
 const tone = (v: string) => ({ '--tone': v }) as CSSProperties
 
@@ -50,7 +50,7 @@ export function CardTile({ t, lane, api, board, onOpen }: { t: Tile; lane: strin
     onOpen(t.id)
   }
   return (
-    <a className={'card' + motion} data-id={t.id} href={'/card/' + t.id} style={tone(TONE[t.status] || 'var(--crew-tone-neutral)')} onClick={open}>
+    <a className={'card' + motion} data-id={t.id} href={withBoard('/card/' + t.id, board)} style={tone(TONE[t.status] || 'var(--crew-tone-neutral)')} onClick={open}>
       <div className="ti">{t.title || '(untitled)'}</div>
       {t.summary ? <div className="su">{t.summary}</div> : null}
       <div className="ft">

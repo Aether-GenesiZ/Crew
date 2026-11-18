@@ -104,7 +104,7 @@ function watchBlocked(ctx: WatchCtx, api: CrewApi) {
       title: 'Crew: a card needs you',
       message: t.message,
       detail: t.detail,
-      action: { label: 'Open in Crew', onClick: () => host.navigate?.(cardLink(t.id)) }
+      action: { label: 'Open in Crew', onClick: () => host.navigate?.(cardLink(t.id, Date.now(), t.board)) }
     })
     try { ctx.os?.notify({ title: 'Crew: a card needs you', body: t.message + '\n' + t.detail }) } catch { /* no OS door: the toast stands */ }
   })

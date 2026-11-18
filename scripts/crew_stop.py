@@ -60,11 +60,15 @@ if HERE not in sys.path:
 import crew_card  # noqa: E402
 import crew_proc  # noqa: E402
 
-# The board this acts on: the same resolution the rest of the crew uses (crew_card.kanban_db: a pinned
-# HERMES_KANBAN_DB / KANBAN_DB, else the board under this HERMES_HOME). A hard-coded ~/.hermes/kanban.db ignored
-# a routed profile and a non-default board, so stop could park cards on the wrong one.
-KANBAN_DB = (crew_card.kanban_db() or os.environ.get("KANBAN_DB") or os.environ.get("HERMES_KANBAN_DB")
-             or os.path.join(crew_card.base_home(), "kanban.db"))
+# The board this run of stop acts on: the same resolution the rest of the crew uses (crew_card.kanban_db:
+# a request's ?board= override, a pinned HERMES_KANBAN_DB / KANBAN_DB, else the board under this
+# HERMES_HOME). A hard-coded ~/.hermes/kanban.db ignored a routed profile and a non-default board, so
+# stop could park cards on the wrong one. Resolved PER CALL, never at import: a module-level read froze
+# the first request's board into every later call - with the switcher, a stop on one board must not act
+# on the board an earlier request pinned.
+def board_db():
+    return (crew_card.kanban_db() or os.environ.get("KANBAN_DB") or os.environ.get("HERMES_KANBAN_DB")
+            or os.path.join(crew_card.base_home(), "kanban.db"))
 # A card in one of these is still somebody's work in progress; done and archived are not.
 OPEN_STATUSES = ("triage", "todo", "scheduled", "ready", "running", "blocked", "review")
 CLOSED_STATUSES = ("done", "archived")
@@ -72,7 +76,7 @@ TERM_WAIT_S = 1.5
 
 
 def q(sql, args=()):
-    conn = sqlite3.connect("file:%s?mode=ro" % KANBAN_DB, uri=True)
+    conn = sqlite3.connect("file:%s?mode=ro" % board_db(), uri=True)
     try:
         conn.row_factory = sqlite3.Row
         return [dict(r) for r in conn.execute(sql, args).fetchall()]
@@ -275,7 +279,7 @@ def archive_card(card_id, dry):
     if dry:
         return 0, ""
     done = subprocess.run([crew_card.hermes_bin(), "kanban", "archive", card_id], capture_output=True, text=True,
-                          timeout=120, env=dict(os.environ, HERMES_KANBAN_DB=KANBAN_DB), encoding="utf-8", errors="replace")
+                          timeout=120, env=dict(os.environ, HERMES_KANBAN_DB=board_db()), encoding="utf-8", errors="replace")
     return 1 if done.returncode == 0 else 0, (done.stdout + done.stderr).strip()
 
 
@@ -294,7 +298,7 @@ def park_card(card_id, dry):
     """Park the card with the kernel's own verb for its state. Returns (status word, output)."""
     status = (q("select status from tasks where id = ?", (card_id,)) or [{"status": "?"}])[0]["status"]
     reason = crew_card.owner_stop_reason(card_id)
-    if crew_card.parked_by_owner(KANBAN_DB, card_id):
+    if crew_card.parked_by_owner(board_db(), card_id):
         return "already parked", ""
     if status in ("running", "ready"):
         argv = ["block", card_id, "--kind", park_kind(card_id), reason]
@@ -307,7 +311,7 @@ def park_card(card_id, dry):
     if dry:
         return "would %s" % argv[0], ""
     done = subprocess.run([crew_card.hermes_bin(), "kanban"] + argv, capture_output=True, text=True, timeout=120,
-                          env=dict(os.environ, HERMES_KANBAN_DB=KANBAN_DB), encoding="utf-8", errors="replace")
+                          env=dict(os.environ, HERMES_KANBAN_DB=board_db()), encoding="utf-8", errors="replace")
     return argv[0] if done.returncode == 0 else "%s refused" % argv[0], (done.stdout + done.stderr).strip()
 
 
@@ -343,7 +347,7 @@ def stop_card(card, dry=False, archive=False):
     elif archive:
         ok = after[0] == "archived" and not still_live
     else:
-        ok = (after[0] == "scheduled" or (after[0] == "blocked" and bool(crew_card.parked_by_owner(KANBAN_DB, card_id)))) \
+        ok = (after[0] == "scheduled" or (after[0] == "blocked" and bool(crew_card.parked_by_owner(board_db(), card_id)))) \
             and not still_live
     facts = {"card": card_id, "before": before, "after": after, "runs_killed": [r["id"] for r in killed],
              "sessions_closed": closed, "sessions_skipped": skipped, "family": family, "still_down": ok, "parked": (not archive and ok), "how": park_word,
@@ -375,8 +379,8 @@ def run(argv=None):
 
     if args.archive and not args.card:
         ap.error("--archive drops a card for good: name the card (the all-cards form only parks)")
-    if not os.path.exists(KANBAN_DB):
-        return 2, "no board at %s" % KANBAN_DB
+    if not os.path.exists(board_db()):
+        return 2, "no board at %s" % board_db()
     cards = q("select id, status, assignee, title, body from tasks")
     if args.card:
         targets = stop_targets([dict(c) for c in cards], args.card)

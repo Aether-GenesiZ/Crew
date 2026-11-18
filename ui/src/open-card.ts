@@ -18,10 +18,12 @@ export function cardFromHash(hash: string): string {
 const CARD_ID = /^[A-Za-z0-9_-]+$/
 const BOARD_SLUG = /^[a-z0-9][a-z0-9_-]*$/
 
-// The board a hash or query names ("#/crew?card=t_x&board=lts-odoo"), or '' when it names none (the active board).
+// The board a hash or query names ("#/crew?card=t_x&board=lts-odoo", or a bare "?board=x"), or '' when
+// it names none (the active board). Accepts both shapes: a Desktop hash link ("/crew?..."), a served
+// page or dashboard tab search ("?card=...&board=...").
 export function boardFromQuery(search: string): string {
-  const m = /^#?\/crew\?(.*)$/.exec(search || '')
-  const id = m ? new URLSearchParams(m[1]).get('board') || '' : ''
+  const q = (search || '').replace(/^#?\/crew\??/, '').replace(/^\?/, '')
+  const id = new URLSearchParams(q).get('board') || ''
   return BOARD_SLUG.test(id) ? id : ''
 }
 
