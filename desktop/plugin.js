@@ -3031,7 +3031,7 @@ function Field({ label, value, copy }) {
     copy ? /* @__PURE__ */ jsx16(CopyButton, { id: copy.id, title: copy.title, text: () => value }) : null
   ] });
 }
-function MoveTo({ api, card, board, onDone }) {
+function MoveTo({ api, card, board, onMoved }) {
   const { actions } = useCrewHost();
   const [open2, setOpen] = useState8(false);
   const [boards, setBoards] = useState8(null);
@@ -3051,8 +3051,8 @@ function MoveTo({ api, card, board, onDone }) {
     setBusy(true);
     try {
       const r = await actions.move(card, to, board);
-      setMsg(r.ok ? "moved to " + to : r.text);
-      if (r.ok) onDone();
+      setMsg(r.text);
+      if (r.ok) onMoved?.(to);
     } catch (e) {
       setMsg("move failed: " + (e instanceof Error ? e.message : String(e)));
     }
@@ -3071,7 +3071,7 @@ function MoveTo({ api, card, board, onDone }) {
     msg ? /* @__PURE__ */ jsx16("span", { className: "quiet", children: msg }) : null
   ] });
 }
-function TopArea({ card, openChat, board, onGraph, onAction, api }) {
+function TopArea({ card, openChat, board, onGraph, onAction, onMoved, api }) {
   const { actions } = useCrewHost();
   const s = card.situation || {};
   const cls = s.headline && s.headline.indexOf("stopped") === 0 ? "blocked" : s.headline === "finished" ? "done" : s.headline && s.headline.indexOf("working") === 0 ? "running" : "";
@@ -3144,8 +3144,7 @@ function TopArea({ card, openChat, board, onGraph, onAction, api }) {
       ] }),
       /* @__PURE__ */ jsx16(ActionBar, { card, openChat, board, onDone: onAction || (() => {
       }) }),
-      /* @__PURE__ */ jsx16(MoveTo, { api, card: card.id, board, onDone: onAction || (() => {
-      }) })
+      /* @__PURE__ */ jsx16(MoveTo, { api, card: card.id, board, onMoved })
     ] }),
     /* @__PURE__ */ jsxs15("div", { className: "tcell", id: "topWhy", children: [
       /* @__PURE__ */ jsx16("div", { className: "tch", id: "whyHead", children: report ? "done report" : "pending reason" }),
@@ -3184,7 +3183,7 @@ function readRail() {
     return false;
   }
 }
-function CardPage({ api, id, onBack, openChat, board, onGraph, hash = false, boardHref = "/" }) {
+function CardPage({ api, id, onBack, openChat, board, onGraph, onMoved, hash = false, boardHref = "/" }) {
   injectCss("base", base_default);
   injectCss("card", card_default);
   const [paused, setPaused] = useState9(false);
@@ -3301,7 +3300,7 @@ function CardPage({ api, id, onBack, openChat, board, onGraph, hash = false, boa
     }, children: /* @__PURE__ */ jsx17("img", { src: MARK_URI, alt: "", width: 26, height: 26 }) }),
     /* @__PURE__ */ jsx17(EventLine, { card }),
     /* @__PURE__ */ jsxs16("div", { id: "main", children: [
-      /* @__PURE__ */ jsx17(TopArea, { card, openChat, board, onGraph, onAction: reload, api }),
+      /* @__PURE__ */ jsx17(TopArea, { card, openChat, board, onGraph, onAction: reload, onMoved, api }),
       /* @__PURE__ */ jsx17(Roster, {}),
       /* @__PURE__ */ jsxs16("div", { id: "row", children: [
         /* @__PURE__ */ jsx17(Rail, { card, collapsed: railCollapsed, onToggle: toggleRail, onBack, href: boardHref }),
@@ -3512,7 +3511,7 @@ function CrewPage({ api }) {
       style: { ...crewVarsFromTheme(theme, renderedMode), background: "var(--crew-bg)", color: "var(--crew-fg)", height: "100%", minHeight: "100%", width: "100%", minWidth: 0, flex: "1 1 auto", alignSelf: "stretch", boxSizing: "border-box", position: "relative", overflow: card ? "hidden" : "auto" },
       children: [
         splash ? /* @__PURE__ */ jsx19(Splash, { api }) : null,
-        route.page === "card" ? /* @__PURE__ */ jsx19(CardPage, { api, id: route.id, onBack: back, openChat, board: boardSlug, onGraph: navigator2 }) : /* @__PURE__ */ jsx19(Board, { api, onOpenCard: (id) => setRoute({ page: "card", id }), boardSlug, onBoard: pickBoard, home: back })
+        route.page === "card" ? /* @__PURE__ */ jsx19(CardPage, { api, id: route.id, onBack: back, openChat, board: boardSlug, onGraph: navigator2, onMoved: pickBoard }) : /* @__PURE__ */ jsx19(Board, { api, onOpenCard: (id) => setRoute({ page: "card", id }), boardSlug, onBoard: pickBoard, home: back })
       ]
     }
   );

@@ -63,7 +63,7 @@ export function CrewPage({ api }: { api: CrewApi }) {
     >
       {splash ? <Splash api={api} /> : null}
       {route.page === 'card'
-        ? <CardPage api={api} id={route.id} onBack={back} openChat={openChat} board={boardSlug} onGraph={navigator} />
+        ? <CardPage api={api} id={route.id} onBack={back} openChat={openChat} board={boardSlug} onGraph={navigator} onMoved={pickBoard} />
         : <Board api={api} onOpenCard={id => setRoute({ page: 'card', id })} boardSlug={boardSlug} onBoard={pickBoard} home={back} />}
     </div>
   )

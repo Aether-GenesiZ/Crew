@@ -46,7 +46,7 @@ export type OpenChat = (profile: string, session: string) => void
 // Move the card to another board: the UI over POST /cards/move - the same route agents POST. The
 // board list comes from /boards.json on demand; the card keeps its id and history, the source card
 // is archived as the trail (the confirm says so). Draws only where the host brings actions.
-function MoveTo({ api, card, board, onDone }: { api: CrewApi; card: string; board?: string; onDone: () => void }) {
+function MoveTo({ api, card, board, onMoved }: { api: CrewApi; card: string; board?: string; onMoved?: (board: string) => void }) {
   const { actions } = useCrewHost()
   const [open, setOpen] = useState(false)
   const [boards, setBoards] = useState<BoardSummary[] | null>(null)
@@ -66,8 +66,8 @@ function MoveTo({ api, card, board, onDone }: { api: CrewApi; card: string; boar
     setBusy(true)
     try {
       const r = await actions.move(card, to, board)
-      setMsg(r.ok ? 'moved to ' + to : r.text)
-      if (r.ok) onDone()
+      setMsg(r.text)                        // the truthful answer, warning included - never replaced
+      if (r.ok) onMoved?.(to)                // the view follows the card to its new board
     } catch (e) {
       setMsg('move failed: ' + (e instanceof Error ? e.message : String(e)))
     }
@@ -93,8 +93,8 @@ function MoveTo({ api, card, board, onDone }: { api: CrewApi; card: string; boar
 
 // The top of the card page: the card's own state and fields, the pending reason (or the done report) and the
 // repeated-stops note. Three boxes, the third only when the card is looping.
-export function TopArea({ card, openChat, board, onGraph, onAction, api }: {
-  card: CardJson; openChat?: OpenChat; board?: string; onGraph?: (board: string, id: string) => void; onAction?: () => void; api: CrewApi
+export function TopArea({ card, openChat, board, onGraph, onAction, onMoved, api }: {
+  card: CardJson; openChat?: OpenChat; board?: string; onGraph?: (board: string, id: string) => void; onAction?: () => void; onMoved?: (board: string) => void; api: CrewApi
 }) {
   const { actions } = useCrewHost()
   const s = card.situation || {}
@@ -170,7 +170,7 @@ export function TopArea({ card, openChat, board, onGraph, onAction, api }: {
         </div>
         {/* Desktop only: the commands for this card (the bar draws nothing without host actions) */}
         <ActionBar card={card} openChat={openChat} board={board} onDone={onAction || (() => {})} />
-        <MoveTo api={api} card={card.id} board={board} onDone={onAction || (() => {})} />
+        <MoveTo api={api} card={card.id} board={board} onMoved={onMoved} />
       </div>
       <div className="tcell" id="topWhy">
         <div className="tch" id="whyHead">{report ? 'done report' : 'pending reason'}</div>

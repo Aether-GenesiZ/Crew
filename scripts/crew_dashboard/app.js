@@ -15722,7 +15722,7 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
       copy ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(CopyButton, { id: copy.id, title: copy.title, text: () => value }) : null
     ] });
   }
-  function MoveTo({ api, card, board, onDone }) {
+  function MoveTo({ api, card, board, onMoved }) {
     const { actions } = useCrewHost();
     const [open, setOpen] = (0, import_react11.useState)(false);
     const [boards, setBoards] = (0, import_react11.useState)(null);
@@ -15742,8 +15742,8 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
       setBusy(true);
       try {
         const r = await actions.move(card, to, board);
-        setMsg(r.ok ? "moved to " + to : r.text);
-        if (r.ok) onDone();
+        setMsg(r.text);
+        if (r.ok) onMoved?.(to);
       } catch (e) {
         setMsg("move failed: " + (e instanceof Error ? e.message : String(e)));
       }
@@ -15762,7 +15762,7 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
       msg ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "quiet", children: msg }) : null
     ] });
   }
-  function TopArea({ card, openChat, board, onGraph, onAction, api }) {
+  function TopArea({ card, openChat, board, onGraph, onAction, onMoved, api }) {
     const { actions } = useCrewHost();
     const s = card.situation || {};
     const cls = s.headline && s.headline.indexOf("stopped") === 0 ? "blocked" : s.headline === "finished" ? "done" : s.headline && s.headline.indexOf("working") === 0 ? "running" : "";
@@ -15835,8 +15835,7 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(ActionBar, { card, openChat, board, onDone: onAction || (() => {
         }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(MoveTo, { api, card: card.id, board, onDone: onAction || (() => {
-        }) })
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(MoveTo, { api, card: card.id, board, onMoved })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "tcell", id: "topWhy", children: [
         /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "tch", id: "whyHead", children: report ? "done report" : "pending reason" }),
@@ -15875,7 +15874,7 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
       return false;
     }
   }
-  function CardPage({ api, id, onBack, openChat, board, onGraph, hash = false, boardHref = "/" }) {
+  function CardPage({ api, id, onBack, openChat, board, onGraph, onMoved, hash = false, boardHref = "/" }) {
     injectCss("base", base_default);
     injectCss("card", card_default);
     const [paused, setPaused] = (0, import_react12.useState)(false);
@@ -15992,7 +15991,7 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
       }, children: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("img", { src: MARK_URI, alt: "", width: 26, height: 26 }) }),
       /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(EventLine, { card }),
       /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { id: "main", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(TopArea, { card, openChat, board, onGraph, onAction: reload, api }),
+        /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(TopArea, { card, openChat, board, onGraph, onAction: reload, onMoved, api }),
         /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Roster, {}),
         /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { id: "row", children: [
           /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Rail, { card, collapsed: railCollapsed, onToggle: toggleRail, onBack, href: boardHref }),

@@ -2601,31 +2601,43 @@ def move_card(card_id, to_slug):
         clash = tgt.execute("SELECT title FROM tasks WHERE id = ?", (card_id,)).fetchone()
         if clash is not None:
             tgt.close(); src.close()
-            if (clash[0] or "").strip() == (card.get("title") or "").strip():
-                return True, "%s is already on %s (same card - nothing to do)" % (card_id, to_slug)
-            return False, "%s already exists on %s as a different card" % (card_id, to_slug)
+            if (clash[0] or "").strip() != (card.get("title") or "").strip():
+                return False, "%s already exists on %s as a different card" % (card_id, to_slug)
+            # A retried move: the copy landed, but a failed trail step may have left the source
+            # un-archived and dispatchable. Reconcile instead of declaring victory.
+            res = _kanban(["archive", card_id])
+            src2 = sqlite3.connect("file:%s?mode=ro" % src_db, uri=True)
+            now = src2.execute("SELECT status FROM tasks WHERE id = ?", (card_id,)).fetchone()
+            src2.close()
+            if now and now[0] != "archived":
+                return False, "%s is on %s but the source card stays %s - archive it by hand (archive rc=%s)" % (
+                    card_id, to_slug, now[0], res.returncode)
+            return True, "%s is already on %s (same card - source archived: nothing more to do)" % (card_id, to_slug)
         links = src.execute("SELECT parent_id, child_id FROM task_links WHERE parent_id = ? OR child_id = ?",
                             (card_id, card_id)).fetchall()
         tgt.execute("INSERT INTO tasks (%s) VALUES (%s)" % (",".join(cols), ",".join("?" * len(cols))),
                     [card[c] for c in cols])
-        for table, fields in (("task_comments", ("task_id", "author", "body", "created_at")),
-                              ("task_events", ("task_id", "run_id", "kind", "payload", "created_at"))):
-            sel = ",".join("NULL" if f == "run_id" else f for f in fields)   # events: run_id is remapped below
-            tgt.execute("INSERT INTO %s (%s) SELECT %s FROM %s WHERE task_id = ?"
-                        % (table, ",".join(fields), sel, table), (card_id,))
+        # Runs first, then events: the events' run_id references follow the mapping below.
         run_map = {}
         for r in src.execute("SELECT * FROM task_runs WHERE task_id = ?", (card_id,)).fetchall():
             rcols = [c[1] for c in src.execute("PRAGMA table_info(task_runs)")]
             run = dict(zip(rcols, r))
-            old = run.get("id")
-            run.pop("id", None)
+            old = run.pop("id", None)
             run["worker_pid"] = None
             run["claim_lock"] = None
             cur = tgt.execute("INSERT INTO task_runs (%s) VALUES (%s)" % (",".join(run), ",".join("?" * len(run))),
                               [run[k] for k in run])
             run_map[old] = cur.lastrowid
-        for old, new in run_map.items():
-            tgt.execute("UPDATE task_events SET run_id = ? WHERE task_id = ? AND run_id = ?", (new, card_id, old))
+        # History is READ FROM THE SOURCE db (the target has none of it yet) and written in; the
+        # events' run rows carry the ids just inserted, so the lineage survives the move.
+        for author, body, created_at in src.execute(
+                "SELECT author, body, created_at FROM task_comments WHERE task_id = ?", (card_id,)).fetchall():
+            tgt.execute("INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?,?,?,?)",
+                        (card_id, author, body, created_at))
+        for run_id, kind, payload, created_at in src.execute(
+                "SELECT run_id, kind, payload, created_at FROM task_events WHERE task_id = ?", (card_id,)).fetchall():
+            tgt.execute("INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?,?,?,?,?)",
+                        (card_id, run_map.get(run_id), kind, payload, created_at))
         # Attachments: copy each FILE from the path its row records (the disk truth), into the
         # target board's attachments root, and rewrite the row - never a bulk dir copy: the source
         # root can be the default board's <home>/kanban/attachments or an env-pinned root, and only
@@ -2649,11 +2661,15 @@ def move_card(card_id, to_slug):
         names = ", ".join("%s>%s" % (p, c) for p, c in links)
     else:
         names = "none"
-    _kanban(["--board", to_slug, "comment", card_id,
-             "Moved from board %s (links on the old board: %s)." % (src_slug, names)])
-    _kanban(["--board", src_slug, "comment", card_id,
-             "Moved to board %s - this card is the trail; the live one is there." % to_slug])
-    res = _kanban(["archive", card_id])   # the source board rides _child_env(); archive keeps the trail
+    try:
+        _kanban(["--board", to_slug, "comment", card_id,
+                 "Moved from board %s (links on the old board: %s)." % (src_slug, names)])
+        _kanban(["--board", src_slug, "comment", card_id,
+                 "Moved to board %s - this card is the trail; the live one is there." % to_slug])
+        res = _kanban(["archive", card_id])   # the source board rides _child_env(); archive keeps the trail
+    except Exception as exc:  # noqa: BLE001 - the copy is committed; the trail steps answer, never hang
+        return True, ("%s moved to %s - but the trail step failed (%s): archive the source card by hand"
+                      % (card_id, to_slug, exc.__class__.__name__))
     moved = "%s moved to %s" % (card_id, to_slug)
     if res.returncode != 0:
         moved += " - but the source card could not be archived: archive it by hand (it still runs otherwise)"
