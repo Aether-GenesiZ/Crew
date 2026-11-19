@@ -147,13 +147,26 @@ def dashboard_url():
     return "http://127.0.0.1:%s" % (os.environ.get("CREW_GRAPH_PORT") or "8799")
 
 
-def card_url(card_id, base=None):
-    """The one link to a card that every surface opens: <dashboard>/crew?card=<id>. The standalone page, the Hermes
-    web tab (mounted at /crew) and Desktop's Crew page all read ?card=; /card/<id> still opens on the standalone page."""
+def card_url(card_id, base=None, board="resolve"):
+    """The one link to a card that every surface opens: <dashboard>/crew?card=<id>&board=<slug>. The
+    standalone page, the Hermes web tab (mounted at /crew) and Desktop's Crew page all read ?card=;
+    /card/<id> still opens on the standalone page. The board rides along because a card link that
+    names no board means the ACTIVE one - after multi-board that opens a card on the wrong board,
+    the 404 the owner hit. board="resolve" (the default) reads the board of the db this process
+    resolves (an env pin in a worker, the ?board= override in a request), so no notify path can
+    forget it; pass an explicit slug to pin, None for the bare active-board link."""
     base = (base if base is not None else dashboard_url()).strip().rstrip("/")
     if base.endswith("/crew"):
         base = base[:-len("/crew")]
-    return "%s/crew?card=%s" % (base, urllib.parse.quote(str(card_id), safe=""))
+    url = "%s/crew?card=%s" % (base, urllib.parse.quote(str(card_id), safe=""))
+    if board == "resolve":
+        try:
+            board = board_slug(kanban_db())
+        except Exception:
+            board = None
+    if board:
+        url += "&board=" + urllib.parse.quote(str(board), safe="")
+    return url
 
 
 GATEWAY_HEARTBEAT_STALE_S = 120   # hermes gateway/status.py _RUNTIME_STATUS_STALE_TTL_S: 2x its 60 s housekeeping beat
@@ -2517,6 +2530,115 @@ def unstuck_card(card_id):
     if res["rc"] != 0:
         return False, "%s stays %s: %s" % (card_id, row[2], res["out"] or "the board refused")
     return True, "%s: %s -> %s" % (card_id, row[2], res["status"])
+
+
+def archive_card(card_id):
+    """(ok, text) - retire a card the owner is done with: `hermes kanban archive`, so it leaves the
+    queue (and the dispatcher's picks) and lands in the ARCHIVED lane with its whole history. Not
+    for a running card: the live worker would keep editing an archived ghost - stop (which parks and
+    archives) is the way out there. The board rides _child_env(), so this lands on the board the
+    request read the card from, never the active one."""
+    row = card_row(card_id)
+    if not row:
+        return False, "no such card: %s" % card_id
+    if row[2] == "running":
+        return False, "%s is running: stop it first (stop parks and archives it)" % card_id
+    res = _kanban(["archive", card_id])
+    out = (res.stdout or res.stderr or "").strip()
+    if res.returncode != 0:
+        return False, "%s stays put: %s" % (card_id, out or "the board refused")
+    return True, "%s archived" % card_id
+
+
+def move_card(card_id, to_slug):
+    """(ok, text) - move one card to another board: the correction tool for a card born on the wrong
+    board. The card keeps its id and its whole history: the tasks row, comments, events, runs and
+    attachment files are copied to the target board's db and attachments dir (stored_path rows are
+    rewritten to the target's absolute paths, run rows get new ids and the events' run_id references
+    follow the mapping; machine-local fields - worker_pid, claim_lock - are not carried over). Links
+    are board-local and dropped, named in a comment on the arrival card. The source card is archived
+    - never deleted - with a pointer comment, so the trail survives on both boards.
+
+    Refused when the card is running (stop it first: its worker edits live rows), when the target
+    board does not exist, or when the target already holds the id under a different title (a re-move
+    of the same card is a success no-op: idempotent for a retried agent call)."""
+    src_db = kanban_db()
+    if not src_db:
+        return False, "no board to move from"
+    src_slug = board_slug(src_db) or "default"
+    tgt_db = kanban_db_for(to_slug)
+    if not tgt_db:
+        return False, "unknown board: %s" % to_slug
+    if os.path.abspath(tgt_db) == os.path.abspath(src_db):
+        return False, "%s is already on %s" % (card_id, to_slug)
+    src = sqlite3.connect("file:%s?mode=ro" % src_db, uri=True)
+    row = src.execute("SELECT * FROM tasks WHERE id = ?", (card_id,)).fetchone()
+    if row is None:
+        src.close()
+        return False, "no such card: %s" % card_id
+    cols = [c[1] for c in src.execute("PRAGMA table_info(tasks)")]
+    card = dict(zip(cols, row))
+    if card.get("status") == "running" or card.get("worker_pid"):
+        src.close()
+        return False, "%s is running: stop it first (stop parks and archives it)" % card_id
+    tgt = sqlite3.connect(tgt_db)
+    try:
+        clash = tgt.execute("SELECT title FROM tasks WHERE id = ?", (card_id,)).fetchone()
+        if clash is not None:
+            tgt.close(); src.close()
+            if (clash[0] or "").strip() == (card.get("title") or "").strip():
+                return True, "%s is already on %s (same card - nothing to do)" % (card_id, to_slug)
+            return False, "%s already exists on %s as a different card" % (card_id, to_slug)
+        links = src.execute("SELECT parent_id, child_id FROM task_links WHERE parent_id = ? OR child_id = ?",
+                            (card_id, card_id)).fetchall()
+        tgt.execute("INSERT INTO tasks (%s) VALUES (%s)" % (",".join(cols), ",".join("?" * len(cols))),
+                    [card[c] for c in cols])
+        for table, fields in (("task_comments", ("task_id", "author", "body", "created_at")),
+                              ("task_events", ("task_id", "run_id", "kind", "payload", "created_at"))):
+            sel = ",".join("NULL" if f == "run_id" else f for f in fields)   # events: run_id is remapped below
+            tgt.execute("INSERT INTO %s (%s) SELECT %s FROM %s WHERE task_id = ?"
+                        % (table, ",".join(fields), sel, table), (card_id,))
+        run_map = {}
+        for r in src.execute("SELECT * FROM task_runs WHERE task_id = ?", (card_id,)).fetchall():
+            rcols = [c[1] for c in src.execute("PRAGMA table_info(task_runs)")]
+            run = dict(zip(rcols, r))
+            old = run.get("id")
+            run.pop("id", None)
+            run["worker_pid"] = None
+            run["claim_lock"] = None
+            cur = tgt.execute("INSERT INTO task_runs (%s) VALUES (%s)" % (",".join(run), ",".join("?" * len(run))),
+                              [run[k] for k in run])
+            run_map[old] = cur.lastrowid
+        for old, new in run_map.items():
+            tgt.execute("UPDATE task_events SET run_id = ? WHERE task_id = ? AND run_id = ?", (new, card_id, old))
+        src_att = os.path.join(os.path.dirname(src_db), "attachments", card_id)
+        tgt_att = os.path.join(os.path.dirname(tgt_db), "attachments", card_id)
+        if os.path.isdir(src_att):
+            shutil.copytree(src_att, tgt_att, dirs_exist_ok=True)
+        for a in src.execute("SELECT task_id, filename, stored_path, content_type, size, uploaded_by, created_at"
+                             " FROM task_attachments WHERE task_id = ?", (card_id,)).fetchall():
+            stored = a[2]
+            if stored and os.path.dirname(stored) == src_att:
+                stored = os.path.join(tgt_att, os.path.basename(stored))
+            tgt.execute("INSERT INTO task_attachments (task_id, filename, stored_path, content_type, size,"
+                        " uploaded_by, created_at) VALUES (?,?,?,?,?,?,?)",
+                        (a[0], a[1], stored, a[3], a[4], a[5], a[6]))
+        tgt.commit()
+    finally:
+        tgt.close(); src.close()
+    if links:
+        names = ", ".join("%s>%s" % (p, c) for p, c in links)
+    else:
+        names = "none"
+    _kanban(["--board", to_slug, "comment", card_id,
+             "Moved from board %s (links on the old board: %s)." % (src_slug, names)])
+    _kanban(["--board", src_slug, "comment", card_id,
+             "Moved to board %s - this card is the trail; the live one is there." % to_slug])
+    res = _kanban(["archive", card_id])   # the source board rides _child_env(); archive keeps the trail
+    moved = "%s moved to %s" % (card_id, to_slug)
+    if res.returncode != 0:
+        moved += " - but the source card could not be archived: archive it by hand (it still runs otherwise)"
+    return True, moved
 
 
 def retry_card(card_id, budget=None, dry_run=False, unblock=True, profile=None, body=None):

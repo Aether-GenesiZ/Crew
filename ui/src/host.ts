@@ -3,7 +3,7 @@ import { createContext, useContext, type ComponentType, type ReactNode } from 'r
 // What the shell may hand the shared components that only the host can do. Desktop provides all three (desktop.tsx,
 // from the SDK: the app's markdown renderer, Button, ConfirmDialog); the browser provides none, so the components
 // fall back to what they draw today. The components never import the SDK: the host brings its pieces through here.
-export const ACTION_NAMES = ['unstuck', 'retry', 'proof', 'stop'] as const
+export const ACTION_NAMES = ['unstuck', 'retry', 'proof', 'stop', 'archive'] as const
 export type ActionName = (typeof ACTION_NAMES)[number]
 
 export interface ActionResult {
@@ -26,6 +26,9 @@ export interface CrewActions {
   // `board` (the switcher's pick; '' = the active board) rides the body so the command lands on the board the
   // view shows.
   run(name: ActionName, card: string, extra?: Record<string, unknown>, board?: string): Promise<ActionResult>
+  // POST /cards/move {card, to_board, board}: move the card to another board - the same route agents
+  // POST; the source board rides the body like every command.
+  move(card: string, toBoard: string, board?: string): Promise<ActionResult>
   // The app's own confirm dialog: resolves true on Confirm, false on Cancel or Esc.
   confirm(title: string, body: string): Promise<boolean>
   // The app's Button (ui/button), so the bar looks like the rest of Desktop.

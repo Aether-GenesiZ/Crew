@@ -29,7 +29,8 @@ export function actionStates(s: ActionSubject): Record<ActionName, boolean> {
     unstuck: st === 'triage' || st === 'blocked' || st === 'scheduled',
     retry: st === 'done' || st === 'blocked' || st === 'failed' || st === 'triage',
     proof: !!s.proof_ask,
-    stop: s.live
+    stop: s.live,
+    archive: st !== 'running' && st !== 'archived'
   }
 }
 
@@ -37,19 +38,21 @@ const WHY_NOT: Record<ActionName, string> = {
   unstuck: 'only a blocked, triage or stopped card can be unstuck',
   retry: 'only a done, blocked or failed card can be retried',
   proof: 'no proof question is waiting for you on this card',
-  stop: 'no run is alive on this card'
+  stop: 'no run is alive on this card',
+  archive: 'a running card must be stopped first; an archived one is already there'
 }
 const WHAT: Record<ActionName, string> = {
   unstuck: 'lift the block so the card runs again (/crew-unstuck)',
   retry: 'raise the budget and run the card again',
   proof: 'give the go for the proof the coordinator asked about (/crew-proof)',
-  stop: 'park the card and stop its run (/crew-stop)'
+  stop: 'park the card and stop its run (/crew-stop)',
+  archive: 'archive the card: it leaves the queue and lands in the ARCHIVED lane with its history'
 }
-const LABEL: Record<ActionName, string> = { unstuck: 'Unstuck', retry: 'Retry', proof: 'Proof', stop: 'Stop' }
+const LABEL: Record<ActionName, string> = { unstuck: 'Unstuck', retry: 'Retry', proof: 'Proof', stop: 'Stop', archive: 'Archive' }
 const SHOW_MS = 6000
 
 type Msg = { ok: boolean; text: string }
-const NAMES: ActionName[] = ['unstuck', 'retry', 'proof', 'stop']
+const NAMES: ActionName[] = ['unstuck', 'retry', 'proof', 'stop', 'archive']
 
 // The four command buttons, one rule set for the card page and the board tile: Unstuck, Retry, Proof, Stop (behind
 // the app's confirm dialog). Proof is drawn only while the card has a proof question waiting (then it is enabled). Draws nothing without the host's actions. compact = the tile's row (no ids, since a
@@ -75,6 +78,9 @@ export function ActionButtons({ subject, card, compact, only, board, onResult, o
       const brave = subject.proof_ask !== 'rescope'
       if (brave && !(await actions.confirm('Run the flagged proof?', 'Hermes flagged this proof command as dangerous. Brave runs it for this card anyway.'))) return
       extra.mode = brave ? 'brave' : 'yes'
+    }
+    if (name === 'archive') {
+      if (!(await actions.confirm('Archive this card?', 'It leaves the queue (and the dispatcher) and lands in the ARCHIVED lane with its whole history.'))) return
     }
     setBusy(name)
     try {

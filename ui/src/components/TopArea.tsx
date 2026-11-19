@@ -1,6 +1,8 @@
 import { useState, type CSSProperties } from 'react'
 import { copyText, coordinatorTarget, fmtAge, toneVar } from '../card-format'
 import type { CardJson } from '../card-types'
+import type { CrewApi } from '../api'
+import type { BoardSummary } from '../types'
 import { useCrewHost } from '../host'
 import { ActionBar } from './ActionBar'
 
@@ -41,10 +43,58 @@ function Field({ label, value, copy }: { label: string; value: string; copy?: { 
 
 export type OpenChat = (profile: string, session: string) => void
 
+// Move the card to another board: the UI over POST /cards/move - the same route agents POST. The
+// board list comes from /boards.json on demand; the card keeps its id and history, the source card
+// is archived as the trail (the confirm says so). Draws only where the host brings actions.
+function MoveTo({ api, card, board, onDone }: { api: CrewApi; card: string; board?: string; onDone: () => void }) {
+  const { actions } = useCrewHost()
+  const [open, setOpen] = useState(false)
+  const [boards, setBoards] = useState<BoardSummary[] | null>(null)
+  const [to, setTo] = useState('')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  if (!actions) return null
+  const { Button } = actions
+  const pick = async () => {
+    if (!boards) setBoards((await api.get<{ boards: BoardSummary[] }>('/boards.json').catch(() => ({ boards: [] as BoardSummary[] }))).boards)
+    setMsg(null)
+    setOpen(!open)
+  }
+  const go = async () => {
+    if (!to || busy) return
+    if (!(actions.confirm ? await actions.confirm('Move this card to ' + to + '?', 'It keeps its id, history and attachments; the card here is archived as the trail.') : true)) return
+    setBusy(true)
+    try {
+      const r = await actions.move(card, to, board)
+      setMsg(r.ok ? 'moved to ' + to : r.text)
+      if (r.ok) onDone()
+    } catch (e) {
+      setMsg('move failed: ' + (e instanceof Error ? e.message : String(e)))
+    }
+    setBusy(false)
+    setOpen(false)
+  }
+  return (
+    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+      <Button size="xs" variant="outline" onClick={pick}>Move to board</Button>
+      {open && boards ? (
+        <>
+          <select value={to} onChange={e => setTo(e.target.value)} aria-label="the board to move to" title="the board this card moves to">
+            <option value="">board…</option>
+            {boards.filter(b => b.slug && b.slug !== board).map(b => <option key={b.slug} value={b.slug}>{b.name}</option>)}
+          </select>
+          <Button size="xs" variant="outline" disabled={!to || busy} onClick={go}>{busy ? 'moving…' : 'Move it'}</Button>
+        </>
+      ) : null}
+      {msg ? <span className="quiet">{msg}</span> : null}
+    </span>
+  )
+}
+
 // The top of the card page: the card's own state and fields, the pending reason (or the done report) and the
 // repeated-stops note. Three boxes, the third only when the card is looping.
-export function TopArea({ card, openChat, board, onGraph, onAction }: {
-  card: CardJson; openChat?: OpenChat; board?: string; onGraph?: (board: string, id: string) => void; onAction?: () => void
+export function TopArea({ card, openChat, board, onGraph, onAction, api }: {
+  card: CardJson; openChat?: OpenChat; board?: string; onGraph?: (board: string, id: string) => void; onAction?: () => void; api: CrewApi
 }) {
   const { actions } = useCrewHost()
   const s = card.situation || {}
@@ -120,6 +170,7 @@ export function TopArea({ card, openChat, board, onGraph, onAction }: {
         </div>
         {/* Desktop only: the commands for this card (the bar draws nothing without host actions) */}
         <ActionBar card={card} openChat={openChat} board={board} onDone={onAction || (() => {})} />
+        <MoveTo api={api} card={card.id} board={board} onDone={onAction || (() => {})} />
       </div>
       <div className="tcell" id="topWhy">
         <div className="tch" id="whyHead">{report ? 'done report' : 'pending reason'}</div>

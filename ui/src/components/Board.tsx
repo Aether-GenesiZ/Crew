@@ -53,6 +53,40 @@ export function Board({ api, onOpenCard, flags, onFlags, home, boardSlug, onBoar
   const query = [all ? 'all=1' : '', older ? 'older=1' : '', boardParam(boardSlug)].filter(Boolean).join('&')
   const { board, error, loading, refresh } = useBoard(api, 2000, query)
 
+  // The New-card intake: the UI over POST /cards - the same route agents POST. The fields are the
+  // worker template's core (title, goal body, assignee, model), so a card typed here is agent-ready
+  // without a chat turn in between; the board select prefills with the board this view shows.
+  const [newOpen, setNewOpen] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [newBody, setNewBody] = useState('')
+  const [newAssignee, setNewAssignee] = useState('')
+  const [newModel, setNewModel] = useState('')
+  const [newBoard, setNewBoard] = useState('')
+  const [newMsg, setNewMsg] = useState<string | null>(null)
+  const [newBusy, setNewBusy] = useState(false)
+  const createBoard = newBoard || boardSlug || (board?.boards || []).find(b => b.current)?.slug || ''
+  const createCard = async () => {
+    if (newBusy) return
+    const title = newTitle.trim()
+    if (!title) { setNewMsg('a title is required'); return }
+    setNewBusy(true); setNewMsg(null)
+    try {
+      const r = await api.post<{ ok: boolean; text?: string; board?: string; card?: { id: string } }>('/cards', {
+        title, board: createBoard, ...(newBody.trim() ? { body: newBody } : {}),
+        ...(newAssignee.trim() ? { assignee: newAssignee } : {}), ...(newModel.trim() ? { model: newModel } : {}),
+        created_by: 'crew-ui'
+      })
+      if (r.ok) {
+        setNewMsg('created ' + (r.card?.id || '') + ' on ' + (r.board || createBoard))
+        setNewTitle(''); setNewBody(''); setNewAssignee(''); setNewModel('')
+        refresh()
+      } else setNewMsg(r.text || 'the board refused')
+    } catch (e) {
+      setNewMsg('create failed: ' + (e instanceof Error ? e.message : String(e)))
+    }
+    setNewBusy(false)
+  }
+
   const setOlderFlag = (on: boolean) => {
     store('older', on ? '1' : null)
     setOlder(on)
@@ -126,6 +160,8 @@ export function Board({ api, onOpenCard, flags, onFlags, home, boardSlug, onBoar
             })}
           </select>
         ) : null}
+        <button type="button" className="newcardbtn" title="create a card on a board - the same POST agents use"
+          onClick={() => { setNewOpen(!newOpen); setNewMsg(null) }}>+ New card</button>
         <span className="meta" id="cards">{cards + ' card' + (cards === 1 ? '' : 's')}</span>
         <span className={'meta' + (live ? ' on' : '')} id="live">{live ? live + ' working now' : 'nothing running'}</span>
         <div className="stats" id="counts">
@@ -174,6 +210,29 @@ export function Board({ api, onOpenCard, flags, onFlags, home, boardSlug, onBoar
           </span>
         </span>
       </header>
+      {newOpen ? (
+        <div className="newcard">
+          <div className="newrow">
+            <input className="newtitle" value={newTitle} onChange={e => setNewTitle(e.target.value)}
+              placeholder="title (required)" aria-label="title" maxLength={200} />
+            <select value={createBoard} onChange={e => setNewBoard(e.target.value)}
+              aria-label="the board to create on" title="the board this card is created on">
+              {(board?.boards || [{ slug: createBoard || 'default', name: createBoard || 'default' }]).map(b =>
+                <option key={b.slug} value={b.slug}>{b.name}</option>)}
+            </select>
+          </div>
+          <textarea value={newBody} onChange={e => setNewBody(e.target.value)} rows={4}
+            placeholder={'Goal / Done when / Verify - the worker template; a card typed here is agent-ready'} aria-label="body" />
+          <div className="newrow">
+            <input value={newAssignee} onChange={e => setNewAssignee(e.target.value)}
+              placeholder="assignee profile (optional) - the dispatcher picks it up" aria-label="assignee" />
+            <input value={newModel} onChange={e => setNewModel(e.target.value)}
+              placeholder="model override (optional)" aria-label="model" />
+            <button type="button" className="newgo" disabled={newBusy} onClick={createCard}>{newBusy ? 'creating…' : 'Create card'}</button>
+          </div>
+          {newMsg ? <div className="newmsg" role="status">{newMsg}</div> : null}
+        </div>
+      ) : null}
       {board.dispatcher && board.dispatcher.alive === false ? (
         <div className="dispatcher-down" id="dispatcher-down" role="alert">
           <b>Cards will not start.</b>{' ' + (board.dispatcher.detail || 'The gateway is not running') + '. Start it with '}

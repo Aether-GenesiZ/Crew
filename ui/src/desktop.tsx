@@ -38,6 +38,7 @@ function Host({ api, kanban, children }: { api: CrewApi; kanban: KanbanRow | nul
         // the route is POST /action/<name> {card, ...extra}; the backend allowlists the names again.
         // `board` (the switcher's pick; '' = the active board) lands the command on the board the view shows.
         run: (name, card, extra, board) => api.post('/action/' + name, { ...extra, card, ...(board ? { board } : {}) }),
+        move: (card, toBoard, board) => api.post('/cards/move', { card, to_board: toBoard, ...(board ? { board } : {}) }),
         confirm: (title, body) => new Promise<boolean>(resolve => setAsk({ title, body, done: resolve })),
         Button: sdk.Button as NonNullable<CrewHost['actions']>['Button']
       }

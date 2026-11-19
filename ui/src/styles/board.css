@@ -167,3 +167,15 @@
 .page-board .card .tbtns{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
 .page-board .card .tmsg{font-size:10px;line-height:1.4;color:var(--crew-text-2);overflow-wrap:anywhere}
 .page-board .card .tmsg.bad{color:var(--crew-tone-blocked)}
+
+/* The New-card intake panel: the UI over POST /cards (the same route agents POST). */
+.page-board .newcardbtn{padding:3px 8px;border:1px solid var(--crew-stroke-2);border-radius:6px;background:none;color:var(--crew-fg);font:inherit;font-size:12px;cursor:pointer}
+.page-board .newcardbtn:hover{border-color:var(--crew-tone-ready)}
+.page-board .newcard{display:grid;gap:6px;padding:10px 16px;border-bottom:1px solid var(--crew-stroke-1);background:var(--crew-bg)}
+.page-board .newcard input,.page-board .newcard textarea,.page-board .newcard select{background:var(--crew-bg);color:var(--crew-text-1);border:1px solid var(--crew-stroke-2);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px}
+.page-board .newcard textarea{resize:vertical}
+.page-board .newcard .newtitle{flex:1;min-width:220px}
+.page-board .newrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.page-board .newcard .newgo{padding:5px 12px;border:none;border-radius:6px;background:var(--crew-tone-running);color:var(--crew-bg);font:inherit;font-size:12px;cursor:pointer}
+.page-board .newcard .newgo:disabled{opacity:.5;cursor:default}
+.page-board .newmsg{font-size:12px;color:var(--crew-tone-ready)}

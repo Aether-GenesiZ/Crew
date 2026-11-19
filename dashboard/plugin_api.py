@@ -39,6 +39,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -377,7 +378,7 @@ def post_embed_ack(action: str, request: Request, body: dict | None = Body(defau
 # session header like every route above; Stop also needs {"confirm": true} in the body, so a stray POST cannot park a
 # card. The slash commands write no card event of their own (the proof answer writes its own proof_confirm), so
 # neither does this route.
-_ACTION_NAMES = ("unstuck", "retry", "proof", "stop")
+_ACTION_NAMES = ("unstuck", "retry", "proof", "stop", "archive")
 
 
 def _action_error(status: int, text: str) -> JSONResponse:
@@ -390,6 +391,8 @@ def _run_action(name: str, card: str, mode: str) -> tuple[bool, str]:
     crew_card = importlib.import_module("crew_card")
     if name == "unstuck":                       # _cmd_unstuck: crew_card.unstuck_card(card)[1]
         return crew_card.unstuck_card(card)
+    if name == "archive":                       # crew_card.archive_card: retire a not-running card
+        return crew_card.archive_card(card)
     if name == "proof":                         # _cmd_proof: crew_card.owner_proof_answer(card, brave=...)
         text = crew_card.owner_proof_answer(card, brave=(mode == "brave"))
         return text.startswith("confirmed proof"), text
@@ -431,3 +434,108 @@ def post_action(name: str, body: dict | None = Body(default=None)):
         return JSONResponse(content={"ok": False, "text": "%s failed - see the dashboard log" % name}, headers=dict(_RESPONSE_HEADERS))
     _invalidate()                   # these actions move or rewrite cards: the next poll must not be cached
     return JSONResponse(content={"ok": bool(ok), "text": str(text)}, headers=dict(_RESPONSE_HEADERS))
+
+
+# The intake route the UI's New-card form and agents share: the fields mirror `hermes kanban create`
+# (docs/board-operations-design.md). API-first on purpose - a bot with a session token POSTs exactly
+# what the form sends, so there is one contract to learn. The board is an explicit `--board` argv
+# flag (not env): hermes ranks board= above HERMES_KANBAN_BOARD/HERMES_KANBAN_DB, so the create lands
+# on the named board whatever this process's own environment pins. Nothing is invented here: the CLI
+# validates the assignee, model, priority and slug semantics, and its --json card is the response.
+@router.post("/cards")
+def post_cards(body: dict | None = Body(default=None)):
+    body = body if isinstance(body, dict) else {}
+    _crew()
+    crew_card = importlib.import_module("crew_card")
+    slug = str(body.get("board") or "").strip()
+    if not slug:
+        raise HTTPException(status_code=400, detail="board is required")
+    if not crew_card.kanban_db_for(slug):
+        raise HTTPException(status_code=404, detail="unknown board: %s" % slug)
+    title = " ".join(str(body.get("title") or "").split())
+    if not title or len(title) > 200:
+        return _action_error(400, "title is required (1-200 chars)")
+    body_text = body.get("body")
+    body_text = str(body_text)[:65536] if body_text not in (None, "") else None
+    def _opt(field, cap=200):
+        val = str(body.get(field) or "").strip()
+        return val[:cap] if val else None
+    assignee, model, provider = _opt("assignee", 100), _opt("model", 100), _opt("provider", 100)
+    created_by, idem = _opt("created_by", 100), _opt("idempotency_key", 100)
+    skills = [str(s).strip()[:100] for s in body.get("skills") or [] if str(s).strip()]
+    def _int(field):
+        val = body.get(field)
+        if isinstance(val, (int, str)) and str(val).strip():
+            try:
+                return int(val)
+            except ValueError:
+                return None
+        return None
+    priority, max_runtime, goal_max_turns = _int("priority"), _int("max_runtime"), _int("goal_max_turns")
+    argv = [crew_card.hermes_bin(), "kanban", "--board", slug, "create", title, "--json"]
+    if body_text is not None:
+        argv += ["--body-file", "-"]              # newlines and flag-like lines survive verbatim
+    if assignee:
+        argv += ["--assignee", assignee]
+    if model:
+        argv += ["--model", model]
+    if provider:
+        argv += ["--provider", provider]
+    if priority is not None:
+        argv += ["--priority", str(priority)]
+    for skill in skills:
+        argv += ["--skill", skill]
+    if max_runtime is not None:
+        argv += ["--max-runtime", str(max_runtime)]
+    if body.get("goal"):
+        argv += ["--goal"]
+        if goal_max_turns is not None:
+            argv += ["--goal-max-turns", str(goal_max_turns)]
+    if created_by:
+        argv += ["--created-by", created_by]
+    if idem:
+        argv += ["--idempotency-key", idem]
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True, timeout=180, encoding="utf-8",
+                              errors="replace", input=body_text)
+    except Exception as exc:  # noqa: BLE001 - an intake POST must answer, never hang the page
+        _log.exception("crew dashboard: create on %s failed", slug)
+        return _action_error(500, "create failed - see the dashboard log (%s)" % exc.__class__.__name__)
+    if done.returncode != 0:
+        return _action_error(400, ((done.stderr or done.stdout or "").strip() or "the board refused")[:500])
+    try:
+        card = json.loads(done.stdout)
+    except ValueError:
+        return _action_error(500, "the board created the card but answered no JSON - check the board")
+    _invalidate()                   # a new card changes its board: the next poll must not be cached
+    return JSONResponse(content={"ok": True, "board": slug, "card": card}, headers=dict(_RESPONSE_HEADERS))
+
+
+# Move a card to another board (docs/board-operations-design.md): the route the UI's Move picker and
+# agents share. The source board rides the body like every command route (_board pins it, so
+# move_card reads the card and archives the source on the board it lives on); the target is
+# validated inside move_card. A re-move of an already-moved card is ok:true (idempotent).
+@router.post("/cards/move")
+def post_cards_move(body: dict | None = Body(default=None)):
+    body = body if isinstance(body, dict) else {}
+    card = body.get("card")
+    to_slug = str(body.get("to_board") or "").strip()
+    if not isinstance(card, str) or not _ACK_PATH_RE.match(card):
+        return _action_error(400, "Invalid card ID format")
+    if not to_slug:
+        return _action_error(400, "to_board is required")
+    _crew()
+    crew_card = importlib.import_module("crew_card")
+    try:
+        with _board(None, body):
+            ok, text = crew_card.move_card(card, to_slug)
+    except HTTPException:
+        raise                     # an unknown source board stays a 404, not a swallowed move answer
+    except Exception:  # noqa: BLE001 - a move must answer, never hang the page
+        _log.exception("crew dashboard: move %s to %s failed", card, to_slug)
+        return _action_error(500, "move failed - see the dashboard log")
+    _invalidate()                   # both boards changed: the next polls must not be cached
+    resp = {"ok": bool(ok), "text": str(text)}
+    if ok:
+        resp.update(board=to_slug, card=card)
+    return JSONResponse(content=resp, headers=dict(_RESPONSE_HEADERS))

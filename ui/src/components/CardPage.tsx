@@ -143,7 +143,7 @@ export function CardPage({ api, id, onBack, openChat, board, onGraph, hash = fal
         }}><img src={MARK_URI} alt="" width={26} height={26} /></a>
         <EventLine card={card} />
         <div id="main">
-          <TopArea card={card} openChat={openChat} board={board} onGraph={onGraph} onAction={reload} />
+          <TopArea card={card} openChat={openChat} board={board} onGraph={onGraph} onAction={reload} api={api} />
           <Roster />
           <div id="row">
             <Rail card={card} collapsed={railCollapsed} onToggle={toggleRail} onBack={onBack} href={boardHref} />

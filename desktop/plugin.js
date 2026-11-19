@@ -520,6 +520,18 @@ var board_default = `/* Board styles, ported unchanged from scripts/crew_dashboa
 .page-board .card .tbtns{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
 .page-board .card .tmsg{font-size:10px;line-height:1.4;color:var(--crew-text-2);overflow-wrap:anywhere}
 .page-board .card .tmsg.bad{color:var(--crew-tone-blocked)}
+
+/* The New-card intake panel: the UI over POST /cards (the same route agents POST). */
+.page-board .newcardbtn{padding:3px 8px;border:1px solid var(--crew-stroke-2);border-radius:6px;background:none;color:var(--crew-fg);font:inherit;font-size:12px;cursor:pointer}
+.page-board .newcardbtn:hover{border-color:var(--crew-tone-ready)}
+.page-board .newcard{display:grid;gap:6px;padding:10px 16px;border-bottom:1px solid var(--crew-stroke-1);background:var(--crew-bg)}
+.page-board .newcard input,.page-board .newcard textarea,.page-board .newcard select{background:var(--crew-bg);color:var(--crew-text-1);border:1px solid var(--crew-stroke-2);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px}
+.page-board .newcard textarea{resize:vertical}
+.page-board .newcard .newtitle{flex:1;min-width:220px}
+.page-board .newrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.page-board .newcard .newgo{padding:5px 12px;border:none;border-radius:6px;background:var(--crew-tone-running);color:var(--crew-bg);font:inherit;font-size:12px;cursor:pointer}
+.page-board .newcard .newgo:disabled{opacity:.5;cursor:default}
+.page-board .newmsg{font-size:12px;color:var(--crew-tone-ready)}
 `;
 
 // src/components/Lane.tsx
@@ -693,24 +705,27 @@ function actionStates(s) {
     unstuck: st === "triage" || st === "blocked" || st === "scheduled",
     retry: st === "done" || st === "blocked" || st === "failed" || st === "triage",
     proof: !!s.proof_ask,
-    stop: s.live
+    stop: s.live,
+    archive: st !== "running" && st !== "archived"
   };
 }
 var WHY_NOT = {
   unstuck: "only a blocked, triage or stopped card can be unstuck",
   retry: "only a done, blocked or failed card can be retried",
   proof: "no proof question is waiting for you on this card",
-  stop: "no run is alive on this card"
+  stop: "no run is alive on this card",
+  archive: "a running card must be stopped first; an archived one is already there"
 };
 var WHAT = {
   unstuck: "lift the block so the card runs again (/crew-unstuck)",
   retry: "raise the budget and run the card again",
   proof: "give the go for the proof the coordinator asked about (/crew-proof)",
-  stop: "park the card and stop its run (/crew-stop)"
+  stop: "park the card and stop its run (/crew-stop)",
+  archive: "archive the card: it leaves the queue and lands in the ARCHIVED lane with its history"
 };
-var LABEL = { unstuck: "Unstuck", retry: "Retry", proof: "Proof", stop: "Stop" };
+var LABEL = { unstuck: "Unstuck", retry: "Retry", proof: "Proof", stop: "Stop", archive: "Archive" };
 var SHOW_MS = 6e3;
-var NAMES = ["unstuck", "retry", "proof", "stop"];
+var NAMES = ["unstuck", "retry", "proof", "stop", "archive"];
 function ActionButtons({ subject, card, compact, only, board, onResult, onDone }) {
   const { actions } = useCrewHost();
   const [busy, setBusy] = useState3(null);
@@ -728,6 +743,9 @@ function ActionButtons({ subject, card, compact, only, board, onResult, onDone }
       const brave = subject.proof_ask !== "rescope";
       if (brave && !await actions.confirm("Run the flagged proof?", "Hermes flagged this proof command as dangerous. Brave runs it for this card anyway.")) return;
       extra.mode = brave ? "brave" : "yes";
+    }
+    if (name === "archive") {
+      if (!await actions.confirm("Archive this card?", "It leaves the queue (and the dispatcher) and lands in the ARCHIVED lane with its whole history.")) return;
     }
     setBusy(name);
     try {
@@ -959,6 +977,46 @@ function Board({ api, onOpenCard, flags, onFlags, home, boardSlug, onBoard }) {
   });
   const query = [all ? "all=1" : "", older ? "older=1" : "", boardParam(boardSlug)].filter(Boolean).join("&");
   const { board, error, loading, refresh } = useBoard(api, 2e3, query);
+  const [newOpen, setNewOpen] = useState4(false);
+  const [newTitle, setNewTitle] = useState4("");
+  const [newBody, setNewBody] = useState4("");
+  const [newAssignee, setNewAssignee] = useState4("");
+  const [newModel, setNewModel] = useState4("");
+  const [newBoard, setNewBoard] = useState4("");
+  const [newMsg, setNewMsg] = useState4(null);
+  const [newBusy, setNewBusy] = useState4(false);
+  const createBoard = newBoard || boardSlug || (board?.boards || []).find((b) => b.current)?.slug || "";
+  const createCard = async () => {
+    if (newBusy) return;
+    const title = newTitle.trim();
+    if (!title) {
+      setNewMsg("a title is required");
+      return;
+    }
+    setNewBusy(true);
+    setNewMsg(null);
+    try {
+      const r = await api.post("/cards", {
+        title,
+        board: createBoard,
+        ...newBody.trim() ? { body: newBody } : {},
+        ...newAssignee.trim() ? { assignee: newAssignee } : {},
+        ...newModel.trim() ? { model: newModel } : {},
+        created_by: "crew-ui"
+      });
+      if (r.ok) {
+        setNewMsg("created " + (r.card?.id || "") + " on " + (r.board || createBoard));
+        setNewTitle("");
+        setNewBody("");
+        setNewAssignee("");
+        setNewModel("");
+        refresh();
+      } else setNewMsg(r.text || "the board refused");
+    } catch (e) {
+      setNewMsg("create failed: " + (e instanceof Error ? e.message : String(e)));
+    }
+    setNewBusy(false);
+  };
   const setOlderFlag = (on) => {
     store("older", on ? "1" : null);
     setOlder(on);
@@ -1034,6 +1092,19 @@ function Board({ api, onOpenCard, flags, onFlags, home, boardSlug, onBoard }) {
           })
         }
       ) : null,
+      /* @__PURE__ */ jsx4(
+        "button",
+        {
+          type: "button",
+          className: "newcardbtn",
+          title: "create a card on a board - the same POST agents use",
+          onClick: () => {
+            setNewOpen(!newOpen);
+            setNewMsg(null);
+          },
+          children: "+ New card"
+        }
+      ),
       /* @__PURE__ */ jsx4("span", { className: "meta", id: "cards", children: cards + " card" + (cards === 1 ? "" : "s") }),
       /* @__PURE__ */ jsx4("span", { className: "meta" + (live ? " on" : ""), id: "live", children: live ? live + " working now" : "nothing running" }),
       /* @__PURE__ */ jsx4("div", { className: "stats", id: "counts", children: HEADER.map(([cls, word, statuses]) => {
@@ -1096,6 +1167,63 @@ function Board({ api, onOpenCard, flags, onFlags, home, boardSlug, onBoard }) {
         ] })
       ] })
     ] }),
+    newOpen ? /* @__PURE__ */ jsxs4("div", { className: "newcard", children: [
+      /* @__PURE__ */ jsxs4("div", { className: "newrow", children: [
+        /* @__PURE__ */ jsx4(
+          "input",
+          {
+            className: "newtitle",
+            value: newTitle,
+            onChange: (e) => setNewTitle(e.target.value),
+            placeholder: "title (required)",
+            "aria-label": "title",
+            maxLength: 200
+          }
+        ),
+        /* @__PURE__ */ jsx4(
+          "select",
+          {
+            value: createBoard,
+            onChange: (e) => setNewBoard(e.target.value),
+            "aria-label": "the board to create on",
+            title: "the board this card is created on",
+            children: (board?.boards || [{ slug: createBoard || "default", name: createBoard || "default" }]).map((b) => /* @__PURE__ */ jsx4("option", { value: b.slug, children: b.name }, b.slug))
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsx4(
+        "textarea",
+        {
+          value: newBody,
+          onChange: (e) => setNewBody(e.target.value),
+          rows: 4,
+          placeholder: "Goal / Done when / Verify - the worker template; a card typed here is agent-ready",
+          "aria-label": "body"
+        }
+      ),
+      /* @__PURE__ */ jsxs4("div", { className: "newrow", children: [
+        /* @__PURE__ */ jsx4(
+          "input",
+          {
+            value: newAssignee,
+            onChange: (e) => setNewAssignee(e.target.value),
+            placeholder: "assignee profile (optional) - the dispatcher picks it up",
+            "aria-label": "assignee"
+          }
+        ),
+        /* @__PURE__ */ jsx4(
+          "input",
+          {
+            value: newModel,
+            onChange: (e) => setNewModel(e.target.value),
+            placeholder: "model override (optional)",
+            "aria-label": "model"
+          }
+        ),
+        /* @__PURE__ */ jsx4("button", { type: "button", className: "newgo", disabled: newBusy, onClick: createCard, children: newBusy ? "creating\u2026" : "Create card" })
+      ] }),
+      newMsg ? /* @__PURE__ */ jsx4("div", { className: "newmsg", role: "status", children: newMsg }) : null
+    ] }) : null,
     board.dispatcher && board.dispatcher.alive === false ? /* @__PURE__ */ jsxs4("div", { className: "dispatcher-down", id: "dispatcher-down", role: "alert", children: [
       /* @__PURE__ */ jsx4("b", { children: "Cards will not start." }),
       " " + (board.dispatcher.detail || "The gateway is not running") + ". Start it with ",
@@ -2903,7 +3031,47 @@ function Field({ label, value, copy }) {
     copy ? /* @__PURE__ */ jsx16(CopyButton, { id: copy.id, title: copy.title, text: () => value }) : null
   ] });
 }
-function TopArea({ card, openChat, board, onGraph, onAction }) {
+function MoveTo({ api, card, board, onDone }) {
+  const { actions } = useCrewHost();
+  const [open2, setOpen] = useState8(false);
+  const [boards, setBoards] = useState8(null);
+  const [to, setTo] = useState8("");
+  const [msg, setMsg] = useState8(null);
+  const [busy, setBusy] = useState8(false);
+  if (!actions) return null;
+  const { Button: Button2 } = actions;
+  const pick = async () => {
+    if (!boards) setBoards((await api.get("/boards.json").catch(() => ({ boards: [] }))).boards);
+    setMsg(null);
+    setOpen(!open2);
+  };
+  const go = async () => {
+    if (!to || busy) return;
+    if (!(actions.confirm ? await actions.confirm("Move this card to " + to + "?", "It keeps its id, history and attachments; the card here is archived as the trail.") : true)) return;
+    setBusy(true);
+    try {
+      const r = await actions.move(card, to, board);
+      setMsg(r.ok ? "moved to " + to : r.text);
+      if (r.ok) onDone();
+    } catch (e) {
+      setMsg("move failed: " + (e instanceof Error ? e.message : String(e)));
+    }
+    setBusy(false);
+    setOpen(false);
+  };
+  return /* @__PURE__ */ jsxs15("span", { style: { display: "inline-flex", gap: 4, alignItems: "center", flexWrap: "wrap" }, children: [
+    /* @__PURE__ */ jsx16(Button2, { size: "xs", variant: "outline", onClick: pick, children: "Move to board" }),
+    open2 && boards ? /* @__PURE__ */ jsxs15(Fragment8, { children: [
+      /* @__PURE__ */ jsxs15("select", { value: to, onChange: (e) => setTo(e.target.value), "aria-label": "the board to move to", title: "the board this card moves to", children: [
+        /* @__PURE__ */ jsx16("option", { value: "", children: "board\u2026" }),
+        boards.filter((b) => b.slug && b.slug !== board).map((b) => /* @__PURE__ */ jsx16("option", { value: b.slug, children: b.name }, b.slug))
+      ] }),
+      /* @__PURE__ */ jsx16(Button2, { size: "xs", variant: "outline", disabled: !to || busy, onClick: go, children: busy ? "moving\u2026" : "Move it" })
+    ] }) : null,
+    msg ? /* @__PURE__ */ jsx16("span", { className: "quiet", children: msg }) : null
+  ] });
+}
+function TopArea({ card, openChat, board, onGraph, onAction, api }) {
   const { actions } = useCrewHost();
   const s = card.situation || {};
   const cls = s.headline && s.headline.indexOf("stopped") === 0 ? "blocked" : s.headline === "finished" ? "done" : s.headline && s.headline.indexOf("working") === 0 ? "running" : "";
@@ -2975,6 +3143,8 @@ function TopArea({ card, openChat, board, onGraph, onAction }) {
         ] }) : null
       ] }),
       /* @__PURE__ */ jsx16(ActionBar, { card, openChat, board, onDone: onAction || (() => {
+      }) }),
+      /* @__PURE__ */ jsx16(MoveTo, { api, card: card.id, board, onDone: onAction || (() => {
       }) })
     ] }),
     /* @__PURE__ */ jsxs15("div", { className: "tcell", id: "topWhy", children: [
@@ -3131,7 +3301,7 @@ function CardPage({ api, id, onBack, openChat, board, onGraph, hash = false, boa
     }, children: /* @__PURE__ */ jsx17("img", { src: MARK_URI, alt: "", width: 26, height: 26 }) }),
     /* @__PURE__ */ jsx17(EventLine, { card }),
     /* @__PURE__ */ jsxs16("div", { id: "main", children: [
-      /* @__PURE__ */ jsx17(TopArea, { card, openChat, board, onGraph, onAction: reload }),
+      /* @__PURE__ */ jsx17(TopArea, { card, openChat, board, onGraph, onAction: reload, api }),
       /* @__PURE__ */ jsx17(Roster, {}),
       /* @__PURE__ */ jsxs16("div", { id: "row", children: [
         /* @__PURE__ */ jsx17(Rail, { card, collapsed: railCollapsed, onToggle: toggleRail, onBack, href: boardHref }),
@@ -3525,6 +3695,7 @@ function Host({ api, kanban, children }) {
         // the route is POST /action/<name> {card, ...extra}; the backend allowlists the names again.
         // `board` (the switcher's pick; '' = the active board) lands the command on the board the view shows.
         run: (name, card, extra, board) => api.post("/action/" + name, { ...extra, card, ...board ? { board } : {} }),
+        move: (card, toBoard, board) => api.post("/cards/move", { card, to_board: toBoard, ...board ? { board } : {} }),
         confirm: (title, body) => new Promise((resolve) => setAsk({ title, body, done: resolve })),
         Button: sdk2.Button
       };
