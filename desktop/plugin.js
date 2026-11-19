@@ -1631,6 +1631,13 @@ var card_default = `/* The card page, ported from scripts/crew_dashboard/crew.cs
   .page-card .role .rmsg{display:none;}
   .page-card .role{flex:0 0 auto;}
 }
+
+/* The move note: the move's answer (a warning included) rides above the routed pages so it
+   survives the navigation the move itself causes (CrewPage never unmounts mid-move). */
+.crew-scope .movenote{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:6px 16px;border-bottom:1px solid var(--crew-stroke-2);background:var(--crew-bg);color:var(--crew-text-1);font-size:12px}
+.crew-scope .movenote span{flex:1;min-width:0;overflow-wrap:anywhere}
+.crew-scope .movenote button{border:none;background:none;color:var(--crew-text-2);font:inherit;font-size:14px;cursor:pointer;padding:0 4px}
+.crew-scope .movenote button:hover{color:var(--crew-fg)}
 `;
 
 // src/components/EventLine.tsx
@@ -3052,7 +3059,7 @@ function MoveTo({ api, card, board, onMoved }) {
     try {
       const r = await actions.move(card, to, board);
       setMsg(r.text);
-      if (r.ok) onMoved?.(to);
+      if (r.ok) onMoved?.(to, r.text);
     } catch (e) {
       setMsg("move failed: " + (e instanceof Error ? e.message : String(e)));
     }
@@ -3489,6 +3496,7 @@ function CrewPage({ api }) {
     store("page.board", slug || null);
   };
   const back = () => setRoute({ page: "board", all: false });
+  const [movedNote, setMovedNote] = useState11(null);
   const host3 = sdk.host;
   const navigator2 = typeof host3?.navigate === "function" ? (board, id) => host3.navigate("/kanban-graph?task=" + encodeURIComponent(board + "/" + id)) : void 0;
   const openSession = host3?.openSession;
@@ -3511,7 +3519,14 @@ function CrewPage({ api }) {
       style: { ...crewVarsFromTheme(theme, renderedMode), background: "var(--crew-bg)", color: "var(--crew-fg)", height: "100%", minHeight: "100%", width: "100%", minWidth: 0, flex: "1 1 auto", alignSelf: "stretch", boxSizing: "border-box", position: "relative", overflow: card ? "hidden" : "auto" },
       children: [
         splash ? /* @__PURE__ */ jsx19(Splash, { api }) : null,
-        route.page === "card" ? /* @__PURE__ */ jsx19(CardPage, { api, id: route.id, onBack: back, openChat, board: boardSlug, onGraph: navigator2, onMoved: pickBoard }) : /* @__PURE__ */ jsx19(Board, { api, onOpenCard: (id) => setRoute({ page: "card", id }), boardSlug, onBoard: pickBoard, home: back })
+        movedNote ? /* @__PURE__ */ jsxs18("div", { role: "status", className: "movenote", children: [
+          /* @__PURE__ */ jsx19("span", { children: movedNote }),
+          /* @__PURE__ */ jsx19("button", { type: "button", onClick: () => setMovedNote(null), children: "\xD7" })
+        ] }) : null,
+        route.page === "card" ? /* @__PURE__ */ jsx19(CardPage, { api, id: route.id, onBack: back, openChat, board: boardSlug, onGraph: navigator2, onMoved: (b, text) => {
+          setMovedNote(text || null);
+          pickBoard(b);
+        } }) : /* @__PURE__ */ jsx19(Board, { api, onOpenCard: (id) => setRoute({ page: "card", id }), boardSlug, onBoard: pickBoard, home: back })
       ]
     }
   );

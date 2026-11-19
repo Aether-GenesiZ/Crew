@@ -38,6 +38,9 @@ export function CrewPage({ api }: { api: CrewApi }) {
   }, [])
   const pickBoard = (slug: string) => { setBoardSlug(slug); store('page.board', slug || null) }
   const back = () => setRoute({ page: 'board', all: false })
+  // A move's answer (warning included) outlives the navigation it causes: MoveTo unmounts when the
+  // card page reloads on the new board, so the note lives HERE - CrewPage never unmounts mid-move.
+  const [movedNote, setMovedNote] = useState<string | null>(null)
   // The card page's cross-link into the kanban graph: only where the shell brings a navigator
   // (Desktop does; the served page and the dashboard tab draw nothing). The graph's deep link is
   // `#/kanban-graph?task=<board>/<id>` - the same door its own notifications use.
@@ -62,8 +65,14 @@ export function CrewPage({ api }: { api: CrewApi }) {
       style={{ ...crewVarsFromTheme(theme, renderedMode), background: 'var(--crew-bg)', color: 'var(--crew-fg)', height: '100%', minHeight: '100%', width: '100%', minWidth: 0, flex: '1 1 auto', alignSelf: 'stretch', boxSizing: 'border-box', position: 'relative', overflow: card ? 'hidden' : 'auto' }}
     >
       {splash ? <Splash api={api} /> : null}
+      {movedNote ? (
+        <div role="status" className="movenote">
+          <span>{movedNote}</span>
+          <button type="button" onClick={() => setMovedNote(null)}>×</button>
+        </div>
+      ) : null}
       {route.page === 'card'
-        ? <CardPage api={api} id={route.id} onBack={back} openChat={openChat} board={boardSlug} onGraph={navigator} onMoved={pickBoard} />
+        ? <CardPage api={api} id={route.id} onBack={back} openChat={openChat} board={boardSlug} onGraph={navigator} onMoved={(b, text) => { setMovedNote(text || null); pickBoard(b) }} />
         : <Board api={api} onOpenCard={id => setRoute({ page: 'card', id })} boardSlug={boardSlug} onBoard={pickBoard} home={back} />}
     </div>
   )

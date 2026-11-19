@@ -46,7 +46,7 @@ export type OpenChat = (profile: string, session: string) => void
 // Move the card to another board: the UI over POST /cards/move - the same route agents POST. The
 // board list comes from /boards.json on demand; the card keeps its id and history, the source card
 // is archived as the trail (the confirm says so). Draws only where the host brings actions.
-function MoveTo({ api, card, board, onMoved }: { api: CrewApi; card: string; board?: string; onMoved?: (board: string) => void }) {
+function MoveTo({ api, card, board, onMoved }: { api: CrewApi; card: string; board?: string; onMoved?: (board: string, text?: string) => void }) {
   const { actions } = useCrewHost()
   const [open, setOpen] = useState(false)
   const [boards, setBoards] = useState<BoardSummary[] | null>(null)
@@ -67,7 +67,7 @@ function MoveTo({ api, card, board, onMoved }: { api: CrewApi; card: string; boa
     try {
       const r = await actions.move(card, to, board)
       setMsg(r.text)                        // the truthful answer, warning included - never replaced
-      if (r.ok) onMoved?.(to)                // the view follows the card to its new board
+      if (r.ok) onMoved?.(to, r.text)       // the view follows the card; the note outlives the unmount
     } catch (e) {
       setMsg('move failed: ' + (e instanceof Error ? e.message : String(e)))
     }
@@ -94,7 +94,7 @@ function MoveTo({ api, card, board, onMoved }: { api: CrewApi; card: string; boa
 // The top of the card page: the card's own state and fields, the pending reason (or the done report) and the
 // repeated-stops note. Three boxes, the third only when the card is looping.
 export function TopArea({ card, openChat, board, onGraph, onAction, onMoved, api }: {
-  card: CardJson; openChat?: OpenChat; board?: string; onGraph?: (board: string, id: string) => void; onAction?: () => void; onMoved?: (board: string) => void; api: CrewApi
+  card: CardJson; openChat?: OpenChat; board?: string; onGraph?: (board: string, id: string) => void; onAction?: () => void; onMoved?: (board: string, text?: string) => void; api: CrewApi
 }) {
   const { actions } = useCrewHost()
   const s = card.situation || {}

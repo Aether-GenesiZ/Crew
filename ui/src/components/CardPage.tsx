@@ -29,8 +29,10 @@ export interface CardPageProps {
   board?: string
   // Cross-link to the kanban graph (only where the shell can navigate: Desktop draws it, a browser not).
   onGraph?: (board: string, id: string) => void
-  // A move landed the card on another board: the page follows it there (the shell retargets the view).
-  onMoved?: (board: string) => void
+  // A move landed the card on another board: the page follows it there (the shell retargets the
+  // view). The answer text (a warning included) rides along - the shell shows it somewhere that
+  // survives the navigation.
+  onMoved?: (board: string, text?: string) => void
   // Read #node=<id>&tab=<name>&role=<name>&rail=collapsed from the address bar and keep it current (browser only:
   // Desktop owns its own hash).
   hash?: boolean

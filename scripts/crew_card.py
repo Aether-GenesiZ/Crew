@@ -2605,11 +2605,18 @@ def move_card(card_id, to_slug):
                 return False, "%s already exists on %s as a different card" % (card_id, to_slug)
             # A retried move: the copy landed, but a failed trail step may have left the source
             # un-archived and dispatchable. Reconcile instead of declaring victory.
-            res = _kanban(["archive", card_id])
+            try:
+                res = _kanban(["archive", card_id])
+                why = None
+            except Exception as exc:  # noqa: BLE001 - the reconciliation answers, never 500s
+                res, why = None, exc.__class__.__name__
             src2 = sqlite3.connect("file:%s?mode=ro" % src_db, uri=True)
             now = src2.execute("SELECT status FROM tasks WHERE id = ?", (card_id,)).fetchone()
             src2.close()
             if now and now[0] != "archived":
+                if res is None:
+                    return False, ("%s is on %s but the source card stays %s - archive it by hand "
+                                   "(the archive command failed: %s)" % (card_id, to_slug, now[0], why))
                 return False, "%s is on %s but the source card stays %s - archive it by hand (archive rc=%s)" % (
                     card_id, to_slug, now[0], res.returncode)
             return True, "%s is already on %s (same card - source archived: nothing more to do)" % (card_id, to_slug)

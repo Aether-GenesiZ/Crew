@@ -14322,6 +14322,13 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
   .page-card .role .rmsg{display:none;}
   .page-card .role{flex:0 0 auto;}
 }
+
+/* The move note: the move's answer (a warning included) rides above the routed pages so it
+   survives the navigation the move itself causes (CrewPage never unmounts mid-move). */
+.crew-scope .movenote{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:6px 16px;border-bottom:1px solid var(--crew-stroke-2);background:var(--crew-bg);color:var(--crew-text-1);font-size:12px}
+.crew-scope .movenote span{flex:1;min-width:0;overflow-wrap:anywhere}
+.crew-scope .movenote button{border:none;background:none;color:var(--crew-text-2);font:inherit;font-size:14px;cursor:pointer;padding:0 4px}
+.crew-scope .movenote button:hover{color:var(--crew-fg)}
 `;
 
   // src/components/EventLine.tsx
@@ -15743,7 +15750,7 @@ body:has(#crew-app[data-crew-shell]){margin:0;background:var(--crew-bg)}
       try {
         const r = await actions.move(card, to, board);
         setMsg(r.text);
-        if (r.ok) onMoved?.(to);
+        if (r.ok) onMoved?.(to, r.text);
       } catch (e) {
         setMsg("move failed: " + (e instanceof Error ? e.message : String(e)));
       }
