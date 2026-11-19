@@ -2550,6 +2550,21 @@ def archive_card(card_id):
     return True, "%s archived" % card_id
 
 
+def _attachments_root_for(db_path, slug):
+    """The attachments root of a board - the SSOT is hermes_cli.attachments_root (it honors the
+    HERMES_KANBAN_ATTACHMENTS_ROOT pin); the fallback mirrors the layout kanban_db_for uses: the
+    default board keeps its files at <home>/kanban/attachments, a named board at
+    <home>/kanban/boards/<slug>/attachments (NOT dirname(db)+attachments - that formula breaks for
+    the default board's <home>/kanban.db)."""
+    try:
+        import hermes_cli.kanban_db as kdb
+        return str(kdb.attachments_root(board=slug))
+    except Exception:
+        if slug == "default":
+            return os.path.join(os.path.dirname(db_path), "kanban", "attachments")
+        return os.path.join(os.path.dirname(db_path), "attachments")
+
+
 def move_card(card_id, to_slug):
     """(ok, text) - move one card to another board: the correction tool for a card born on the wrong
     board. The card keeps its id and its whole history: the tasks row, comments, events, runs and
@@ -2611,18 +2626,22 @@ def move_card(card_id, to_slug):
             run_map[old] = cur.lastrowid
         for old, new in run_map.items():
             tgt.execute("UPDATE task_events SET run_id = ? WHERE task_id = ? AND run_id = ?", (new, card_id, old))
-        src_att = os.path.join(os.path.dirname(src_db), "attachments", card_id)
-        tgt_att = os.path.join(os.path.dirname(tgt_db), "attachments", card_id)
-        if os.path.isdir(src_att):
-            shutil.copytree(src_att, tgt_att, dirs_exist_ok=True)
+        # Attachments: copy each FILE from the path its row records (the disk truth), into the
+        # target board's attachments root, and rewrite the row - never a bulk dir copy: the source
+        # root can be the default board's <home>/kanban/attachments or an env-pinned root, and only
+        # the rows know where the files really are.
+        att_root = _attachments_root_for(tgt_db, to_slug)
         for a in src.execute("SELECT task_id, filename, stored_path, content_type, size, uploaded_by, created_at"
                              " FROM task_attachments WHERE task_id = ?", (card_id,)).fetchall():
             stored = a[2]
-            if stored and os.path.dirname(stored) == src_att:
-                stored = os.path.join(tgt_att, os.path.basename(stored))
+            new_path = stored
+            if stored and os.path.exists(stored):
+                new_path = os.path.join(att_root, card_id, os.path.basename(stored))
+                os.makedirs(os.path.dirname(new_path), exist_ok=True)
+                shutil.copy2(stored, new_path)
             tgt.execute("INSERT INTO task_attachments (task_id, filename, stored_path, content_type, size,"
                         " uploaded_by, created_at) VALUES (?,?,?,?,?,?,?)",
-                        (a[0], a[1], stored, a[3], a[4], a[5], a[6]))
+                        (a[0], a[1], new_path, a[3], a[4], a[5], a[6]))
         tgt.commit()
     finally:
         tgt.close(); src.close()
