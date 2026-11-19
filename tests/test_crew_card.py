@@ -161,9 +161,17 @@ class OriginIdTests(unittest.TestCase):
 
 class CardUrlTests(unittest.TestCase):
     def test_the_card_link_is_the_crew_route_with_the_id(self):
-        self.assertEqual("http://dash/crew?card=t_1", crew_card.card_url("t_1", "http://dash/"))
-        self.assertEqual("http://dash/crew?card=t_1", crew_card.card_url("t_1", "http://dash/crew"))   # a base that is the tab
-        self.assertEqual("http://dash/crew?card=a%2Fb", crew_card.card_url("a/b", "http://dash"))
+        # board=None keeps the bare active-board link (the legacy contract every old message carries)
+        self.assertEqual("http://dash/crew?card=t_1", crew_card.card_url("t_1", "http://dash/", board=None))
+        self.assertEqual("http://dash/crew?card=t_1", crew_card.card_url("t_1", "http://dash/crew", board=None))
+        self.assertEqual("http://dash/crew?card=a%2Fb", crew_card.card_url("a/b", "http://dash", board=None))
+
+    def test_the_card_link_carries_the_board_by_default(self):
+        # an explicit board pins it into the link (%2F-safe); the resolved default (what a worker
+        # or a notify path gets) is covered by the watch tests' end-to-end expectations.
+        self.assertEqual("http://dash/crew?card=t_1&board=fusion-llm",
+                         crew_card.card_url("t_1", "http://dash/", board="fusion-llm"))
+        self.assertEqual("http://dash/crew?card=a%2Fb&board=b2", crew_card.card_url("a/b", "http://dash", board="b2"))
 
 
 class FmtTokensTests(unittest.TestCase):

@@ -45,7 +45,7 @@ export async function actionChecks({ tmp, React, createRoot, window, document, o
     return { host, done: async () => { await React.act(async () => { root.unmount() }); host.remove() } }
   }
   // a button that is not drawn has no state: Proof appears only while the card has a proof question
-  const state = h => Object.fromEntries(['unstuck', 'retry', 'proof', 'stop'].filter(n => h.querySelector('#act-' + n)).map(n => [n, !h.querySelector('#act-' + n).disabled]))
+  const state = h => Object.fromEntries(['unstuck', 'retry', 'proof', 'stop', 'archive'].filter(n => h.querySelector('#act-' + n)).map(n => [n, !h.querySelector('#act-' + n).disabled]))
 
   const withHost = await makePlugin(true), noHost = await makePlugin(false)
   const opened = globalThis.__opened = []
@@ -53,9 +53,9 @@ export async function actionChecks({ tmp, React, createRoot, window, document, o
   // blocked card without a proof question: Unstuck and Retry on, Stop off, no Proof button at all; Open chat there because the card has a session
   let rests = []
   let m = await openCard(withHost, blocked, rests)
-  eq([...m.host.querySelectorAll('#actionbar button')].map(b => b.textContent), ['Unstuck', 'Retry', 'Stop', 'Open chat'], 'no proof question: the bar has no Proof button')
+  eq([...m.host.querySelectorAll('#actionbar button')].map(b => b.textContent), ['Unstuck', 'Retry', 'Stop', 'Archive', 'Open chat'], 'no proof question: the bar has no Proof button')
   ok(!m.host.querySelector('#act-proof'), 'no #act-proof without a proof question')
-  eq(state(m.host), { unstuck: true, retry: true, stop: false }, 'blocked card: button states')
+  eq(state(m.host), { unstuck: true, retry: true, stop: false, archive: true }, 'blocked card: button states')
   ok(m.host.querySelector('#act-stop').dataset.variant === 'destructive', 'Stop is the destructive Button variant')
   ok(!m.host.querySelector('#cardCoOpen'), 'the bar replaces the old open-chat chip')
   await click(m.host.querySelector('#act-chat'))
@@ -80,7 +80,7 @@ export async function actionChecks({ tmp, React, createRoot, window, document, o
   // running card: only Stop is on, and it asks first
   rests = []
   m = await openCard(withHost, running, rests)
-  eq(state(m.host), { unstuck: false, retry: false, stop: true }, 'running card: button states (no Proof)')
+  eq(state(m.host), { unstuck: false, retry: false, stop: true, archive: false }, 'running card: button states (no Proof - archive off while it runs)')
   await click(m.host.querySelector('#act-stop'))
   ok(m.host.querySelector('#confirm'), 'Stop opens the confirm dialog')
   eq(rests.filter(r => r.method === 'POST').length, 0, 'nothing is posted before the answer')
@@ -96,8 +96,8 @@ export async function actionChecks({ tmp, React, createRoot, window, document, o
   // a proof question waiting: Proof is on, brave behind a confirm
   rests = []
   m = await openCard(withHost, proof, rests)
-  eq([...m.host.querySelectorAll('#actionbar button')].map(b => b.textContent), ['Unstuck', 'Retry', 'Proof', 'Stop', 'Open chat'], 'a proof question: Proof appears')
-  eq(state(m.host), { unstuck: true, retry: true, proof: true, stop: false }, 'proof waiting: button states, Proof enabled')
+  eq([...m.host.querySelectorAll('#actionbar button')].map(b => b.textContent), ['Unstuck', 'Retry', 'Proof', 'Stop', 'Archive', 'Open chat'], 'a proof question: Proof appears')
+  eq(state(m.host), { unstuck: true, retry: true, proof: true, stop: false, archive: true }, 'proof waiting: button states, Proof enabled')
   await click(m.host.querySelector('#act-proof'))
   await click(m.host.querySelector('#confirm-yes'))
   await wait(10)

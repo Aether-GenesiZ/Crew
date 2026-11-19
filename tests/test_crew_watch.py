@@ -165,20 +165,20 @@ class WatchTests(unittest.TestCase):
         self.finish(cid, "built the page")
         plain = W.check(self.db, cid, self.state, time.time())[0]
         md = W.check(self.db, cid, self.state, time.time(), md=True)[0]
-        self.assertTrue(md.startswith("**Done** · [%s](http://dash/crew?card=%s) · landing page" % (cid, cid)), md)
+        self.assertTrue(md.startswith("**Done** · [%s](http://dash/crew?card=%s&board=default) · landing page" % (cid, cid)), md)
         self.assertIn("built the page", md)
         self.assertIn("- **Lands at:** /x/site", md)
         self.assertEqual("> " + crew_card.DESKTOP_LINE, md.splitlines()[-1])
         self.assertEqual(1, md.count("http://dash"))   # only the ticket id's own link carries the URL
         self.assertNotIn("**", plain)
         self.assertNotIn("> ", plain)
-        self.assertEqual("Card: http://dash/crew?card=%s" % cid, plain.splitlines()[-1])
+        self.assertEqual("Card: http://dash/crew?card=%s&board=default" % cid, plain.splitlines()[-1])
 
     def test_md_needs_you_keeps_the_question_and_the_answer_hint_before_the_pointer(self):
         cid = self.card(status="blocked")
         self.decide(cid, decision="ask_owner", question="Which palette?")
         md = W.check(self.db, cid, self.state, time.time(), md=True)[0]
-        self.assertTrue(md.startswith("**Needs you** · [%s](http://dash/crew?card=%s)" % (cid, cid)), md)
+        self.assertTrue(md.startswith("**Needs you** · [%s](http://dash/crew?card=%s&board=default)" % (cid, cid)), md)
         self.assertIn("Which palette?", md)
         lines = md.splitlines()
         self.assertIn("/crew-unstuck %s" % cid, lines[-3])
