@@ -108,7 +108,9 @@ export function TopArea({ card, openChat, board, onGraph, onAction, onMoved, api
 
   // A done card shows its done report (the text the owner is sent); any other card its pending reason.
   const report = card.card_status === 'done' ? card.report || '' : ''
-  const reason = report || s.reason || s.why || ''
+  // The reason chain ends at the raw body: a card born outside crew has no REASON/GOAL contract,
+  // and its body IS its pending reason (the "nothing pending" box is only for truly empty cards).
+  const reason = report || s.reason || s.why || card.card_body || ''
   const you = (s.reason_actor || (s.reason ? 'nobody' : '')) === 'you' || cls === 'blocked'
   const age = s.reason_age_s
 

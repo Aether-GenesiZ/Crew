@@ -3088,7 +3088,7 @@ function TopArea({ card, openChat, board, onGraph, onAction, onMoved, api }) {
   const kids = (s.children || []).length;
   const target = coordinatorTarget(card.coordinator);
   const report = card.card_status === "done" ? card.report || "" : "";
-  const reason = report || s.reason || s.why || "";
+  const reason = report || s.reason || s.why || card.card_body || "";
   const you = (s.reason_actor || (s.reason ? "nobody" : "")) === "you" || cls === "blocked";
   const age = s.reason_age_s;
   const spinText = s.repeat_text || "";

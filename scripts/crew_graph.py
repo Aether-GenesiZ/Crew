@@ -314,8 +314,8 @@ def load_card(card_id):
     if not db:
         return None, None
     row = qone(db, "select id, title, status, assignee, result, model_override, "
-                   "session_id, created_at, started_at, completed_at, block_kind "
-                   "from tasks where id = ?", (card_id,))
+                   "session_id, created_at, started_at, completed_at, block_kind, "
+                   "body from tasks where id = ?", (card_id,))
     return row, db
 
 
@@ -1797,6 +1797,10 @@ def build_graph(card_ref, steps_n=DEFAULT_STEPS):
         "card_id": card_id,
         "card_title": title,
         "card_status": card_row[2] if len(card_row) > 2 else "",
+        # The RAW body rides along: a card born outside crew (native kanban create, a webhook,
+        # another gateway's agent) carries its intent in the body with no GOAL/REASON contract -
+        # the card page falls back to it so every card shows its reason, not "nothing pending".
+        "card_body": (card_row[11] or "").strip() if len(card_row) > 11 else "",
         # The board this card lives on (the active board, or the one a ?board= request pinned): the
         # card page shows it and its cross-links carry it.
         "board": crew_card.board_slug(),

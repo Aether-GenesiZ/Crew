@@ -87,6 +87,8 @@ export interface CardJson {
   card_id: string
   card_title?: string
   card_status?: string
+  // The raw task body: the card page's pending-reason fallback for cards born outside crew.
+  card_body?: string
   card_board?: string
   board?: string
   card_role?: string
